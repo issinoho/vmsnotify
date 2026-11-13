@@ -4,8 +4,8 @@ One row per question per machine, with the output that settles it. A question is
 answered for a machine only when that machine has a row. vmsotel's `docs/findings.md`
 holds the evidence for what was copied from it (the readers, the parsers, the transport).
 
-Machines: **x86** = X86VMS, OpenVMS E9.2-4 (a QEMU guest), VSI C V7.7. IA64 and Alpha: not
-yet run.
+Machines: **x86** = X86VMS, OpenVMS E9.2-4 (a QEMU guest), VSI C V7.7. **IA64** = MYI64,
+an rx2660, V8.4-2L3, VSI C V7.4-001 (its rows are in "IA64", below). Alpha: not yet run.
 
 ## The read position across processes (design D8)
 
@@ -66,3 +66,29 @@ the port answered).
 Not yet on x86: the real Gotify, Apprise API and ntfy servers; TLS; an operator-log
 record through the rules (none was written during the runs); records waiting at a resume;
 `descrip.mms`; running detached; the kit.
+
+## IA64
+
+MYI64, 2026-11-13, as batch jobs with `tools/vms.sh ia64 batch`, as IAIN; the same
+procedures as x86, the same questions. **No source change was needed.**
+
+| # | IA64 | Evidence / notes |
+| --- | --- | --- |
+| P1 | yes | `vmsnotify probes, MYI64, OpenVMS V8.4-2L3 IA64`, `built:  probe_position`, no message |
+| P2, P3 | yes | Saved in one batch job (`saved record 8 of 10: rfa=00010000009A len=20`, FID `(10485,7,256)`), resumed in the next (entry 984): `PASS open`, `PASS fid matches the saved one`, `PASS get by RFA status=00010001, 20 bytes: RECORD 00008 created`, `PASS record matches the saved length and first 20 bytes`, `7 records followed`. The same from a subprocess |
+| P4 | yes | `PASS open … TEST.LOG;2`, `opened fid (10580,5,256)`, `DETECTED fid differs: this is a DIFFERENT FILE (newer version)` |
+| P5 | a clean failure | `FAIL open status=00018292 (RMS$_FNF)` |
+| P6 | yes | `SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;23`, fid `(58537,24,0)`, `read 452 records`, `saved record 450 of 452: rfa=001B0000015C len=0`; resume all PASS, `2 records followed` |
+| P7 | yes | `SYS$COMMON:[SYSMGR]SECURITY.AUDIT$JOURNAL;4`, fid `(58857,13,0)`, `read 19 records`, `saved record 17 of 19: rfa=00100000009E len=417`; resume all PASS |
+| B1 | yes | `built: vmsnotify.exe vmsnotify_tls.exe`, no compiler or linker message from VSI C V7.4; `vmsnotify 0.1.0` from both |
+| B2, B3 | yes | `starting on MYI64`; `logs: starting at the end of …OPERATOR.LOG;23 (452 records, 0 s); … SECURITY.AUDIT$JOURNAL;4 (19 records, 0 s)`, the probe's counts |
+| B4 | yes (a stand-in) | `ok    g (gotify): HTTP 200`, `ok    a (apprise): HTTP 200`, `ok    n (ntfy): HTTP 200`, `ok    w (webhook): HTTP 200`, `ok: 0 of 4 endpoints failed` |
+| B5 | yes | `8 sent, 0 failed attempts, 0 dropped, 0 unsent`; `opcom = rms1 SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;23 58537,24,0 R 27,0,408 18 4c6f67…`, `audit = rms1 SYS$COMMON:[SYSMGR]SECURITY.AUDIT$JOURNAL;4 58857,13,0 R 17,0,166 1401 0b00…` |
+| B6 | yes | `logs: resuming in …OPERATOR.LOG;23 at the saved position (0 records written while stopped); resuming in …SECURITY.AUDIT$JOURNAL;4 at the saved position (0 records written while stopped)` |
+| B7, B8 | yes, in 3 to 5 s; no break-in made | Two wrong-password SSH logins, default rules, throttle 30: attempt at 18:55:34, the record's time 18:55:36, `18:55:39Z event login-failure [high] to g, a, n, w: MYI64: Login failure: remote user IAIN from 192.168.0.131 on FTA86:`; the second counted, `18:56:09Z summary login-failure [high] … MYI64: 1 more: Login failure: …`; `2 records, 0 ignored, 1 events, 1 throttled, 1 summaries, … 16 sent, 0 failed attempts`. SHOW INTRUSION: `NETWORK SUSPECT 2 … 192.168.0.131::IAIN` |
+
+Different from x86: the FID's third word is 0 on IA64's system logs and 256 on its test
+file -- the reverse of x86 -- so it is a property of the file, not of system logs; all
+three words are kept either way.
+
+Not yet on IA64: as x86's list, and a break-in record (two failures make only a SUSPECT).

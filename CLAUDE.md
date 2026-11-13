@@ -8,7 +8,8 @@ matters to Gotify, an Apprise API server, ntfy or a webhook that the site runs i
 agent builds (`build_vms.com`, both images, no warnings) and dry-runs against the real logs
 (`docs/findings.md`, B1-B3); from there it has sent to a
 stand-in for the four servers, resumed from its saved position, and delivered real login
-failures and a break-in within seconds (B4-B8). Not yet: the real servers, TLS, IA64, Alpha.
+failures and a break-in within seconds (B4-B8). IA64 gives the same, with no source change
+(findings, "IA64"). Not yet: the real servers, TLS, Alpha.
 Induced login failures count towards VMS's break-in evasion: six from one source in a few
 minutes made an INTRUDER record on x86. Keep to three, and say so first. The read position across restarts (D8) is implemented in the
 fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says
