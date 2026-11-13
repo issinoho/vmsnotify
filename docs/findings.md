@@ -157,3 +157,18 @@ since that change.
 The twin rule itself is shown on the Alpha (B10), the one machine that writes twins.
 IA64's first submit of this job never ran; the second was entry 11 on SYS$BATCH, where
 the afternoon's were in the 980s, so IA64 had been restarted in between.
+
+## TLS to the real servers
+
+The `tls` service of `tools/test-endpoints/compose.yaml` on docker-nuc: nginx in front of
+Gotify (18443), the Apprise API (18444) and ntfy (18445), with a self-signed certificate
+`CN=vmsnotify-test-endpoints`, `IP Address:192.168.0.218`, valid to 15 Feb 2029, SHA-256
+`22:1F:87:7D:…:FB:61:15`, fetched with `openssl s_client` and given as `cafile`
+(`TEST-ENDPOINTS.CRT` in each work directory). 2026-11-13.
+
+| # | Question | Linux | x86 | IA64 | Alpha | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| T1 | `--test` over verified TLS to each real server | yes | yes | yes | yes | On each, `VMSNOTIFY_TLS`: `ok    gotify (gotify): HTTP 200, TLSv1.3 TLS_AES_256_GCM_SHA384`, the same for apprise and ntfy, `ok: 0 of 3 endpoints failed`, exit `%X00000001` on VMS |
+
+Refusal with the wrong certificate, and the plain image refusing https, are tested on Linux
+(`tools/agent_test.py`) and against the stand-in from VMS (the stand-in TLS run).
