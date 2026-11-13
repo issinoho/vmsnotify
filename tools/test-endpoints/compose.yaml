@@ -1,0 +1,52 @@
+# Test notification servers for vmsnotify (tools/test-endpoints).
+#
+# Throwaway servers for testing vmsnotify's Gotify, Apprise and ntfy
+# endpoints from OpenVMS. They are for a test LAN only: open or default
+# credentials, no TLS. Do not use them for production.
+#
+# Host ports 4318 and 4319 (an OpenTelemetry collector), 3000, 3100 and
+# 9090 are already in use on docker-nuc (192.168.0.218), so these
+# services use 18080, 18000 and 18081 to avoid them.
+#
+# Start:             docker compose up -d
+# Stop and delete all data: docker compose down -v
+
+services:
+  gotify:
+    image: gotify/server:3.1.1
+    restart: unless-stopped
+    ports:
+      - "18080:80"
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      # Change this. It sets the admin password when the data volume is
+      # first created; changing it later has no effect on an existing volume.
+      GOTIFY_DEFAULTUSER_PASS: changeme
+
+  apprise:
+    image: caronc/apprise:2.1.0
+    restart: unless-stopped
+    ports:
+      - "18000:8000"
+    volumes:
+      - apprise-config:/config
+    environment:
+      # "simple" keeps configurations in /config, keyed by name (here: vms).
+      APPRISE_STATEFUL_MODE: simple
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.37.2
+    restart: unless-stopped
+    command: serve
+    ports:
+      - "18081:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      NTFY_BASE_URL: http://192.168.0.218:18081
+
+volumes:
+  gotify-data:
+  apprise-config:
+  ntfy-cache:
