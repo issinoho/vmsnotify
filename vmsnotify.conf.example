@@ -1,0 +1,141 @@
+# vmsnotify configuration: VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF
+#
+# vmsnotify reads the operator log (OPCOM) and the security audit journal
+# and sends what matters to notification servers you run yourself:
+# Gotify, an Apprise API server, ntfy, or any webhook. It connects out to
+# them directly; nothing listens on this system and no outside service is
+# involved.
+#
+# Lines are `key = value`. Lines starting with # or ! are comments.
+# Settings before the first [section] apply to the whole agent.
+
+# ---- what to read ---------------------------------------------------------
+
+# Both need READALL, which VMSNOTIFY$CONFIGURE gives the agent's account.
+logs.opcom = yes
+logs.audit = yes
+# logs.opcom_file = SYS$MANAGER:OPERATOR.LOG
+# logs.audit_file = SYS$MANAGER:SECURITY.AUDIT$JOURNAL
+
+# Seconds between looks at the logs.
+# interval = 10
+
+# The node name at the start of each title. Default: this system's
+# SCS node name.
+# node = PROD1
+
+# After a restart, events written while the agent was stopped are sent if
+# they are no older than this (seconds) and no more than this many;
+# otherwise it starts at the end and says what it skipped.
+# catchup.max_age = 3600
+# catchup.max_records = 500
+
+# The agent's own notices: started, stopped, a log it cannot read.
+# notices = yes
+
+# Messages kept per endpoint while it cannot be reached; the oldest go
+# first when full.
+# queue = 32
+
+# ---- where to send --------------------------------------------------------
+#
+# One [endpoint NAME] section per server. Every endpoint gets every
+# notification unless a rule's `to` names some.
+#
+#   type          gotify, apprise, ntfy or webhook
+#   url           http:// or https://host[:port][/path]. No query string:
+#                 credentials go in token, token_file or user/password.
+#   token         gotify: the application's token. ntfy, webhook: sent as
+#                 "Authorization: Bearer <token>".
+#   token_file    the token, read from a file (keep it in [CONF], which
+#                 only the agent's account can read). Use this, not token.
+#   user, password  apprise, ntfy, webhook: basic authentication instead.
+#   key           apprise: the stored configuration's key, POST /notify/KEY.
+#                 The Apprise server holds the destinations (mail, Teams,
+#                 Matrix, Pushover...), so their addresses and secrets
+#                 never sit on this system.
+#   tag           apprise: only that configuration's URLs with this tag.
+#   topic         ntfy: the topic.
+#   cafile        https: the CA certificate to check the server against.
+#                 Default: the system's. The certificate is always checked.
+#   min_priority  low, normal, high or urgent: send nothing below it.
+#   timeout       seconds to connect, and for each read (default 10).
+
+[endpoint home]
+type       = gotify
+url        = https://gotify.example.com
+token_file = VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
+
+# [endpoint everyone]
+# type = apprise
+# url  = https://apprise.example.com
+# key  = openvms
+
+# [endpoint phone]
+# type         = ntfy
+# url          = https://ntfy.example.com
+# topic        = openvms
+# token_file   = VMSNOTIFY$ROOT:[CONF]NTFY.TOKEN
+# min_priority = high
+
+# [endpoint automation]
+# type = webhook
+# url  = http://nodered.example.com:1880/openvms
+
+# ---- what to send ---------------------------------------------------------
+#
+# Built-in rules, on unless rules.defaults = no:
+#
+#   breakin        audit BREAKIN (break-in, intrusion)          urgent
+#   login-failure  audit LOGFAIL                                high
+#   authorization  audit SYSUAF, RIGHTSDB                       high
+#   auditing       audit AUDIT, SERVER (auditing changed)       high
+#   privileged     audit PRVAUD, SYSTIME, SYSGEN, INSTALL       high
+#   opcom-error    OPCOM messages with an -E- or -F- condition  high
+#   opcom-warning  OPCOM messages with a -W- condition          normal
+#   opcom-request  OPCOM REQUESTs to the operators              normal
+#
+# Anything else -- logins, logouts, object access, the operator log's
+# time stamps -- is not sent. Repeats of a rule's event for the same user
+# and remote node within 300 s are counted and sent as one summary.
+#
+# rules.defaults = yes
+# rules.defaults.to = home
+# rules.defaults.throttle = 300
+
+# Your rules are checked first, in order; the first that matches decides.
+# A [rule NAME] matches when all the settings it has match:
+#
+#   source     audit, opcom or any
+#   types      audit types, comma-separated: LOGFAIL, BREAKIN, LOGIN ...
+#   severity   warning, error or fatal: at least this
+#   request    yes: only operator REQUESTs
+#   user       the user (VMS wildcards * and %, case-blind)
+#   terminal   the terminal
+#   remote     the remote node or address, e.g. *192.168.0.131
+#   text       the whole message text, e.g. *SHADOW*
+#
+# and says what to do:
+#
+#   action     notify (default) or ignore
+#   priority   low, normal (default), high or urgent
+#   to         endpoint names, comma-separated (default: all)
+#   throttle   seconds to count repeats before a summary (default 300;
+#              0 sends every one)
+
+# [rule monitoring-host]
+# source = audit
+# types  = LOGFAIL
+# remote = *192.168.0.131
+# action = ignore
+
+# [rule shadow-sets]
+# source   = opcom
+# text     = *SHADOW*
+# priority = high
+
+# [rule logins-to-system]
+# source   = audit
+# types    = LOGIN
+# user     = SYSTEM
+# priority = normal

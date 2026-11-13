@@ -1,0 +1,5 @@
+POST /message
+Content-Type: application/json
+X-Gotify-Key: AkY8Tz3bQ.Q4x7p
+
+{"title":"X86VMS: %MOUNT-E-OPENIN, error opening \"DKA200:[CAFÉ]\\x\"","message":"Message from user SYSTEM on X86VMS\n%MOUNT-E-OPENIN, error opening \"DKA200:[CAFÉ]\\x\"\n\nTime: 2026-11-13 16:44:37 UTC\nNode: X86VMS\nRule: opcom-error\n","priority":8}

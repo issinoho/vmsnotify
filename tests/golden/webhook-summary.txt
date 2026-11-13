@@ -1,0 +1,4 @@
+POST /vms
+Content-Type: application/json
+
+{"kind":"summary","node":"X86VMS","title":"X86VMS: 19 more: Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","message":"19 more events matched rule login-failure for SSH$SSH from SSH_PASSWORD:192.0.2.10 within 300 s of the first, which was sent:\nLogin failure: remote user ROOT from SSH_PASSWORD:192.0.2.10\n","priority":"high","rule":"login-failure","count":19,"window_s":300}

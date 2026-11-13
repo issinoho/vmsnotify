@@ -1,0 +1,5 @@
+POST /notify/vms
+Content-Type: application/json
+Authorization: Basic bm90aWZ5OnMzY3JldA==
+
+{"title":"X86VMS: Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","body":"Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10\n\nEvent: LOGFAIL\nUser: SSH$SSH\nRemote user: ROOT\nRemote node: SSH_PASSWORD:192.0.2.10\nTime: 2026-11-13 16:44:37 UTC\nNode: X86VMS\nRule: login-failure\n","type":"warning","format":"text","tag":"ops"}

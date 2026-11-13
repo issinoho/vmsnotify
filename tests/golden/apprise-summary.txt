@@ -1,0 +1,5 @@
+POST /notify/vms
+Content-Type: application/json
+Authorization: Basic bm90aWZ5OnMzY3JldA==
+
+{"title":"X86VMS: 19 more: Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","body":"19 more events matched rule login-failure for SSH$SSH from SSH_PASSWORD:192.0.2.10 within 300 s of the first, which was sent:\nLogin failure: remote user ROOT from SSH_PASSWORD:192.0.2.10\n","type":"warning","format":"text","tag":"ops"}

@@ -1,0 +1,4 @@
+POST /vms
+Content-Type: application/json
+
+{"kind":"event","node":"X86VMS","title":"X86VMS: Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","message":"Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10\n\nEvent: LOGFAIL\nUser: SSH$SSH\nRemote user: ROOT\nRemote node: SSH_PASSWORD:192.0.2.10\nTime: 2026-11-13 16:44:37 UTC\nNode: X86VMS\nRule: login-failure\n","priority":"high","rule":"login-failure","record":{"source":"audit","time":"2026-11-13 16:44:37 UTC","time_unix_ns":"1794588277000000000","severity":"WARN","body":"Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","attributes":{"openvms.audit.type":"LOGFAIL","openvms.audit.subtype":1,"openvms.audit.username":"SSH$SSH","openvms.audit.remote_username":"ROOT","openvms.audit.remote_nodename":"SSH_PASSWORD:192.0.2.10"}}}

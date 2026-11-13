@@ -1,0 +1,5 @@
+POST /message
+Content-Type: application/json
+X-Gotify-Key: AkY8Tz3bQ.Q4x7p
+
+{"title":"X86VMS: Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10","message":"Login failure: remote user ROOT from SSH_PASSWORD:192.0.2.10\n\nEvent: LOGFAIL\nUser: SSH$SSH\nRemote user: ROOT\nRemote node: SSH_PASSWORD:192.0.2.10\nTime: 2026-11-13 16:44:37 UTC\nNode: X86VMS\nRule: login-failure\n","priority":8}

@@ -1,0 +1,121 @@
+/*
+ * vmsnotify: throttling. See throttle.h.
+ */
+
+#include <string.h>
+
+#include "throttle.h"
+
+static void copy(char *dst, size_t cap, const char *src)
+{
+    size_t n = strlen(src);
+
+    if (n >= cap)
+        n = cap - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+void vn_throttle_init(vn_throttle *t)
+{
+    memset(t, 0, sizeof *t);
+}
+
+void vn_throttle_key(const vn_log_rec *rec, char *key, size_t cap)
+{
+    const char *user = vn_rec_user(rec), *remote = vn_rec_remote(rec);
+    size_t n;
+
+    copy(key, cap, user);
+    if (remote[0] != '\0') {
+        n = strlen(key);
+        if (n > 0 && n + 6 < cap) {
+            memcpy(key + n, " from ", 6);
+            key[n + 6] = '\0';
+        }
+        n = strlen(key);
+        copy(key + n, cap - n, remote);
+    }
+}
+
+/* Moves an ended entry's summary to pending if it counted any, and frees
+   it. 0 if pending is full (the entry is kept). */
+static int retire(vn_throttle *t, vn_thr_entry *e)
+{
+    if (e->s.count > 0) {
+        if (t->npending >= VN_THR_MAX)
+            return 0;
+        t->pending[t->npending++] = e->s;
+    }
+    e->used = 0;
+    return 1;
+}
+
+int vn_throttle_admit(vn_throttle *t, const vn_rule *r, const char *key,
+                      const char *label, unsigned long now_s)
+{
+    vn_thr_entry *free_e = NULL;
+    size_t i;
+
+    if (r->throttle_s <= 0)
+        return 1;
+    for (i = 0; i < VN_THR_MAX; i++) {
+        vn_thr_entry *e = &t->e[i];
+
+        if (!e->used) {
+            if (free_e == NULL)
+                free_e = e;
+            continue;
+        }
+        if (strcmp(e->s.rule, r->name) != 0 || strcmp(e->s.key, key) != 0)
+            continue;
+        if (now_s < e->window_end) {
+            e->s.count++;
+            return 0;
+        }
+        /* Its window has ended: its summary is due, and this event opens
+           a new window. */
+        if (!retire(t, e))
+            return 1;
+        free_e = e;
+        break;
+    }
+    if (free_e == NULL) {
+        /* Full: free a window that has ended, if there is one. */
+        for (i = 0; i < VN_THR_MAX && free_e == NULL; i++)
+            if (now_s >= t->e[i].window_end && retire(t, &t->e[i]))
+                free_e = &t->e[i];
+        if (free_e == NULL)
+            return 1;           /* send, untracked: never lose one */
+    }
+    memset(free_e, 0, sizeof *free_e);
+    free_e->used = 1;
+    free_e->window_end = now_s + (unsigned long) r->throttle_s;
+    copy(free_e->s.rule, sizeof free_e->s.rule, r->name);
+    copy(free_e->s.key, sizeof free_e->s.key, key);
+    copy(free_e->s.label, sizeof free_e->s.label, label);
+    copy(free_e->s.to, sizeof free_e->s.to, r->to);
+    free_e->s.priority = r->priority;
+    free_e->s.window_s = r->throttle_s;
+    return 1;
+}
+
+size_t vn_throttle_due(vn_throttle *t, unsigned long now_s, int flush,
+                       vn_summary *out, size_t max)
+{
+    size_t n = 0, i;
+
+    for (i = 0; i < VN_THR_MAX; i++)
+        if (t->e[i].used && (flush || now_s >= t->e[i].window_end))
+            if (!retire(t, &t->e[i]))
+                break;
+    while (n < max && n < t->npending) {
+        out[n] = t->pending[n];
+        n++;
+    }
+    if (n > 0) {
+        memmove(t->pending, t->pending + n, (t->npending - n) * sizeof t->pending[0]);
+        t->npending -= n;
+    }
+    return n;
+}

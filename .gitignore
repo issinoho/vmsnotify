@@ -1,0 +1,4 @@
+build/
+tools/nodes.conf
+__pycache__/
+*.pyc

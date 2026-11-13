@@ -1,0 +1,14 @@
+POST /base/openvms
+Content-Type: text/plain; charset=utf-8
+Authorization: Bearer tk_abc
+Title: X86VMS: %MOUNT-E-OPENIN, error opening "DKA200:[CAF?]\x"
+Priority: 4
+Tags: warning,openvms
+
+Message from user SYSTEM on X86VMS
+%MOUNT-E-OPENIN, error opening "DKA200:[CAFÉ]\x"
+
+Time: 2026-11-13 16:44:37 UTC
+Node: X86VMS
+Rule: opcom-error
+
