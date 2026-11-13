@@ -70,10 +70,34 @@ is that of the first condition message in its text (vmsotel's parser).
 
 ## Throttle
 
-Per rule and key (the record's user and remote node), the first event is sent at once and
-opens a window (default 300 s); repeats inside it are counted, and one summary follows
-when it ends ("19 more: Login failure ..."). A table entry that cannot be had means the
-event is sent, never dropped.
+Per rule and key, the first event is sent at once and opens a window (default 300 s);
+repeats inside it are counted, and one summary follows when it ends ("19 more: Login
+failure ..."). A table entry that cannot be had means the event is sent, never dropped.
+
+**The key says who tried, from where**: the person, upper-cased -- the record's remote
+username if it has one, else its username -- and the place, the remote node without a
+leading service prefix: `IAIN from 192.168.0.131`. A prefix is `[A-Za-z_$]+:` with at least
+one character that is not a hex digit, so `SSH_PASSWORD:192.168.0.131` loses it while
+`FTP_C0A80083`, `192.168.0.5` and IPv6 (`fe80::1`, `2001:db8::1`, `abcd::1`) stay as they
+are. Why: on the Alpha one failed SSH login writes two LOGFAIL records in the same second,
+one as user IAIN (remote user `iain`, remote node `192.168.0.131`) and one as `SSH$SSH`
+(remote user `IAIN`, remote node `SSH_PASSWORD:192.168.0.131`); x86 and IA64 write one, and
+an older x86 sample had `SSH$SSH` with remote user `ROOT`. Keyed by username and the raw
+remote node they were two groups, so two notifications and two summaries. The rules still
+match on `vn_rec_user` and `vn_rec_remote` (the record's own fields), so a pattern such as
+`*192.168.0.131` is unchanged; only the key is canonical.
+
+**Twins are one event, silently.** An event with the same rule and key as one just admitted
+(sent, or counted in a window), whose record time is within 2 s of that one's, is a
+duplicate: not sent and not counted, so it makes no "1 more" either. Counting it would give
+a summary for an attempt that was never repeated. It is the record's time, not the clock the
+windows use, that decides, so a backlog read at once after a restart is judged as it
+happened. The memory is a short list of recent events (32), not the windows, so it works for
+a rule with `throttle = 0` too, which sends every event but not the twin. Records with no
+time (0), and records that name no remote node (operator messages, local audit events), are
+never twins: two operator errors from SYSTEM in one second are two events. The agent counts
+duplicates in its final line ("2 duplicates") and logs nothing for each.
+The cost is that two real attempts by one person from one place within 2 s are shown as one.
 
 ## Sending
 

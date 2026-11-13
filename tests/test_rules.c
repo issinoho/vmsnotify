@@ -137,15 +137,15 @@ static void test_throttle(void)
 
     CHECK(recs_audit(&r, 5, "SSH$SSH", "ROOT", "SSH_PASSWORD:192.0.2.10", NULL));
     vn_throttle_key(&r, key, sizeof key);
-    CHECK(strcmp(key, "SSH$SSH from SSH_PASSWORD:192.0.2.10") == 0);
+    CHECK(strcmp(key, "ROOT from 192.0.2.10") == 0);
 
     /* Twenty failures in a minute: one sent, nineteen counted. */
     for (i = 0; i < 20; i++)
-        sent += vn_throttle_admit(&t, &rule, key, "X86VMS: Login failure", 1000 + (unsigned long) i * 3);
+        sent += vn_throttle_admit(&t, &rule, key, "X86VMS: Login failure", 1000 + (unsigned long) i * 3, 0);
     CHECK(sent == 1);
     CHECK(vn_throttle_due(&t, 1100, 0, s, 4) == 0);       /* window open */
     /* Another key is its own group. */
-    CHECK(vn_throttle_admit(&t, &rule, "OTHER", "x", 1101) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "OTHER", "x", 1101, 0) == 1);
     /* At the end of the window, one summary. */
     CHECK(vn_throttle_due(&t, 1300, 0, s, 4) == 1);
     CHECK(s[0].count == 19);
@@ -155,22 +155,22 @@ static void test_throttle(void)
     /* "OTHER" ended with none counted: freed, no summary. */
     CHECK(vn_throttle_due(&t, 1500, 0, s, 4) == 0);
     /* A new event after the window is sent and opens a new one. */
-    CHECK(vn_throttle_admit(&t, &rule, key, "x", 1301) == 1);
-    CHECK(vn_throttle_admit(&t, &rule, key, "x", 1302) == 0);
+    CHECK(vn_throttle_admit(&t, &rule, key, "x", 1301, 0) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, key, "x", 1302, 0) == 0);
     /* Flush at shutdown gives it now. */
     CHECK(vn_throttle_due(&t, 1303, 1, s, 4) == 1 && s[0].count == 1);
 
     /* An event whose window ended before due() ran: its summary is kept,
        and the event opens the next window. */
-    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2000) == 1);
-    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2001) == 0);
-    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2400) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2000, 0) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2001, 0) == 0);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 2400, 0) == 1);
     CHECK(vn_throttle_due(&t, 2401, 0, s, 4) == 1 && s[0].count == 1);
 
     /* throttle_s 0: everything is sent. */
     rule.throttle_s = 0;
-    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 3000) == 1);
-    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 3000) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 3000, 0) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 3000, 0) == 1);
 
     /* A full table never suppresses an event it cannot track. */
     rule.throttle_s = 300;
@@ -179,10 +179,135 @@ static void test_throttle(void)
         char k[16];
 
         sprintf(k, "K%d", i);
-        CHECK(vn_throttle_admit(&t, &rule, k, "x", 5000) == 1);
+        CHECK(vn_throttle_admit(&t, &rule, k, "x", 5000, 0) == 1);
     }
-    CHECK(vn_throttle_admit(&t, &rule, "NEW", "x", 5001) == 1);
-    CHECK(vn_throttle_admit(&t, &rule, "NEW", "x", 5002) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "NEW", "x", 5001, 0) == 1);
+    CHECK(vn_throttle_admit(&t, &rule, "NEW", "x", 5002, 0) == 1);
+}
+
+/* Sets a record's time to Unix seconds, as the parsers would have read it. */
+static void recs_set_secs(vn_log_rec *r, unsigned long secs)
+{
+    r->time_ns = vn_qmul(vn_q32((vn_u32) secs), 1000000000u);
+}
+
+/* The Alpha's two records for one failed SSH login (findings, "Alpha"). */
+static void alpha_pair(vn_log_rec *a, vn_log_rec *b, unsigned long secs)
+{
+    CHECK(recs_audit(a, 5, "IAIN", "iain", "192.168.0.131", NULL));
+    CHECK(recs_audit(b, 5, "SSH$SSH", "IAIN", "SSH_PASSWORD:192.168.0.131", NULL));
+    recs_set_secs(a, secs);
+    recs_set_secs(b, secs);
+}
+
+static void test_throttle_key(void)
+{
+    vn_log_rec a, b, r, o;
+    char ka[VN_THR_KEY], kb[VN_THR_KEY];
+
+    alpha_pair(&a, &b, 1000);
+    vn_throttle_key(&a, ka, sizeof ka);
+    vn_throttle_key(&b, kb, sizeof kb);
+    CHECK(strcmp(ka, "IAIN from 192.168.0.131") == 0);
+    CHECK(strcmp(kb, "IAIN from 192.168.0.131") == 0);
+    /* The rules still see what the records say. */
+    CHECK(strcmp(vn_rec_user(&a), "IAIN") == 0);
+    CHECK(strcmp(vn_rec_user(&b), "SSH$SSH") == 0);
+    CHECK(strcmp(vn_rec_remote(&b), "SSH_PASSWORD:192.168.0.131") == 0);
+
+    /* x86 and IA64: one record, with a terminal. */
+    CHECK(recs_audit(&r, 5, "IAIN", "IAIN", "192.168.0.131", "TNA1:"));
+    vn_throttle_key(&r, ka, sizeof ka);
+    CHECK(strcmp(ka, "IAIN from 192.168.0.131") == 0);
+    /* No remote user: the user; no remote node: no "from". */
+    CHECK(recs_audit(&r, 5, "system", NULL, NULL, "FTA1:"));
+    vn_throttle_key(&r, ka, sizeof ka);
+    CHECK(strcmp(ka, "SYSTEM") == 0);
+    /* An operator message has no remote user attribute to consult. */
+    CHECK(recs_opcom(&o, "Message from user SYSTEM on X86VMS\n%MOUNT-F-MEDOFL, offline"));
+    vn_throttle_key(&o, ka, sizeof ka);
+    CHECK(strcmp(ka, "SYSTEM") == 0);
+
+    /* The prefix rule. */
+    CHECK(strcmp(vn_throttle_place("SSH_PASSWORD:192.168.0.131"), "192.168.0.131") == 0);
+    CHECK(strcmp(vn_throttle_place("SSH_PASSWORD:fe80::1"), "fe80::1") == 0);
+    CHECK(strcmp(vn_throttle_place("FTP_C0A80083"), "FTP_C0A80083") == 0);
+    CHECK(strcmp(vn_throttle_place("192.168.0.5"), "192.168.0.5") == 0);
+    CHECK(strcmp(vn_throttle_place("fe80::1"), "fe80::1") == 0);
+    CHECK(strcmp(vn_throttle_place("2001:db8::1"), "2001:db8::1") == 0);
+    CHECK(strcmp(vn_throttle_place("abcd::1"), "abcd::1") == 0);
+    CHECK(strcmp(vn_throttle_place("BEEF:1"), "BEEF:1") == 0);   /* all hex */
+    CHECK(strcmp(vn_throttle_place("HOST:1"), "1") == 0);
+    CHECK(strcmp(vn_throttle_place(""), "") == 0);
+    CHECK(strcmp(vn_throttle_place(":x"), ":x") == 0);
+}
+
+static void test_throttle_twins(void)
+{
+    vn_throttle t;
+    vn_rule rule, other;
+    vn_summary s[4];
+    vn_log_rec a, b, c, d, e;
+    char ka[VN_THR_KEY], kb[VN_THR_KEY], ke[VN_THR_KEY];
+
+    vn_rule_init(&rule, "login-failure");
+    rule.throttle_s = 300;
+
+    /* The Alpha pair: one sent, the twin dropped and not counted, so the
+       window's end gives no summary. */
+    vn_throttle_init(&t);
+    alpha_pair(&a, &b, 1000);
+    vn_throttle_key(&a, ka, sizeof ka);
+    vn_throttle_key(&b, kb, sizeof kb);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 50, vn_throttle_rec_s(&a)) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, kb, "x", 50, vn_throttle_rec_s(&b)) == VN_THR_DUP);
+    CHECK(vn_throttle_due(&t, 400, 0, s, 4) == 0);
+    CHECK(vn_throttle_due(&t, 400, 1, s, 4) == 0);
+
+    /* Two separate failures 10 s apart: the second is counted, and its
+       twin is not; "1 more" follows. */
+    vn_throttle_init(&t);
+    alpha_pair(&a, &b, 1000);
+    alpha_pair(&c, &d, 1010);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 50, vn_throttle_rec_s(&a)) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, kb, "x", 50, vn_throttle_rec_s(&b)) == VN_THR_DUP);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 60, vn_throttle_rec_s(&c)) == VN_THR_COUNTED);
+    CHECK(vn_throttle_admit(&t, &rule, kb, "x", 60, vn_throttle_rec_s(&d)) == VN_THR_DUP);
+    CHECK(vn_throttle_due(&t, 400, 0, s, 4) == 1);
+    CHECK(s[0].count == 1);
+
+    /* Throttle 0 sends every event, but still not the twin. */
+    rule.throttle_s = 0;
+    vn_throttle_init(&t);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 50, vn_throttle_rec_s(&a)) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, kb, "x", 50, vn_throttle_rec_s(&b)) == VN_THR_DUP);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 60, vn_throttle_rec_s(&c)) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, kb, "x", 60, vn_throttle_rec_s(&d)) == VN_THR_DUP);
+    CHECK(vn_throttle_due(&t, 400, 1, s, 4) == 0);
+
+    /* Different people from one address are different groups. */
+    rule.throttle_s = 300;
+    vn_throttle_init(&t);
+    CHECK(recs_audit(&e, 5, "SSH$SSH", "BOB", "SSH_PASSWORD:192.168.0.131", NULL));
+    recs_set_secs(&e, 1000);
+    vn_throttle_key(&e, ke, sizeof ke);
+    CHECK(strcmp(ke, "BOB from 192.168.0.131") == 0);
+    CHECK(vn_throttle_admit(&t, &rule, ka, "x", 50, 1000) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, ke, "x", 50, 1000) == VN_THR_SEND);
+
+    /* Within 2 s is a twin, 3 s is not; unknown time never is. */
+    vn_throttle_init(&t);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 50, 1000) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 50, 1002) == VN_THR_DUP);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 50, 1003) == VN_THR_COUNTED);
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 50, 0) == VN_THR_COUNTED);
+    CHECK(vn_throttle_due(&t, 400, 0, s, 4) == 1 && s[0].count == 2);
+
+    /* Another rule's event is not its twin. */
+    vn_throttle_init(&t);
+    vn_rule_init(&other, "other");
+    CHECK(vn_throttle_admit(&t, &rule, "K", "x", 50, 1000) == VN_THR_SEND);
+    CHECK(vn_throttle_admit(&t, &other, "K", "x", 50, 1000) == VN_THR_SEND);
 }
 
 static void test_format(void)
@@ -244,6 +369,8 @@ int main(void)
     test_defaults();
     test_user_rules();
     test_throttle();
+    test_throttle_key();
+    test_throttle_twins();
     test_format();
     return check_summary("test_rules");
 }

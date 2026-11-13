@@ -129,8 +129,16 @@ Different on Alpha: **one failed SSH password login makes two LOGFAIL records** 
 `SSH$SSHD-SESSION.EXE` (user IAIN, remote user `iain`, remote node `192.168.0.131`) and one
 as username `SSH$SSH` (remote user `IAIN`, remote node `SSH_PASSWORD:192.168.0.131`, status
 `%X00D3803C`) -- neither with a terminal. x86 and IA64 make one, with a terminal. Their
-users and remote nodes differ, so the throttle sees two groups and the user gets two
-notifications for one attempt. Not yet dealt with.
+users and remote nodes differ, so the throttle saw two groups and the user got two
+notifications for one attempt. **Now handled in code** (`docs/design.md`, "Throttle"): the
+throttle key is the upper-cased remote username (else username) from the remote node without
+a service prefix, so both records are `IAIN from 192.168.0.131`, and a record with the same
+rule and key within 2 s of one just admitted is dropped silently as its twin. Tested on
+Linux (`tests/test_rules.c`, the Alpha pair; `tools/agent_test.py`, the same pair through
+the fake log source). **Not yet re-run on the Alpha**: one wrong password there should now
+give one event, no "1 more", and `1 duplicates` in the final line.
 
-The probe's driver procedures name `USER$ROOT:[IAIN.VMSNOTIFY]`; for the Alpha they were
-edited on the way up. They should take their directory from where they are.
+The probe's driver procedures (`probes/position_test.com`, `position_batch.com`) used to name
+`USER$ROOT:[IAIN.VMSNOTIFY]` and were edited on the way up for the Alpha. They now take the
+work directory from their own location (the directory above `probes/`); not yet run on VMS
+since that change.

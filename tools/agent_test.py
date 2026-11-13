@@ -134,6 +134,14 @@ def logfail(user="ROOT", remote="SSH_PASSWORD:192.0.2.10", when=0):
     return f"{when}|audit|LOGFAIL|{user}|{remote}"
 
 
+def apart(n, user="ROOT", remote="SSH_PASSWORD:192.0.2.10"):
+    """n login failures that are separate attempts: record times 3 s apart,
+    ending a few seconds ago. (The same person and place within 2 s are one
+    attempt's twin records, and the throttle drops all but one: the Alpha.)"""
+    now = int(time.time())
+    return [logfail(user, remote, when=now - 3 * (n - i)) for i in range(n)]
+
+
 def opcom_error(n, when=0):
     return (f"{when}|opcom|Message from user SYSTEM on TESTVMS\\n"
             f"%MOUNT-F-MEDOFL, medium is offline, drive {n}")
@@ -303,7 +311,7 @@ def main(plain, tls, vmsstub):
     reset()
     b = Box(d, "burst")
     b.write_conf(port, extra="rules.defaults.throttle = 2\n", only="gw")
-    b.append(*[logfail() for _ in range(20)])
+    b.append(*apart(20))
     b.append(logfail("OTHER", "SSH_PASSWORD:192.0.2.77"))
     b.from_start()
     rc, out = b.run(plain, cycles=5)
@@ -320,7 +328,7 @@ def main(plain, tls, vmsstub):
     reset()
     b = Box(d, "burst-flush")
     b.write_conf(port, only="w")
-    b.append(*[logfail() for _ in range(5)])
+    b.append(*apart(5))
     b.from_start()
     rc, out = b.run(plain, cycles=1)
     h = hooks()
@@ -328,6 +336,27 @@ def main(plain, tls, vmsstub):
           "summary is sent then",
           rc == 0 and [e["kind"] for e in h] == ["event", "summary"] and
           h[1]["count"] == 4, out)
+
+    # The Alpha writes two records for one failed SSH login, in the same
+    # second, as two different users: the person and the place are the same.
+    reset()
+    b = Box(d, "alpha-pair")
+    b.write_conf(port, only="w")
+    now = int(time.time())
+    b.append(f"{now - 20}|audit|LOGFAIL|iain|192.168.0.131|IAIN",
+             f"{now - 20}|audit|LOGFAIL|IAIN|SSH_PASSWORD:192.168.0.131|SSH$SSH",
+             f"{now - 10}|audit|LOGFAIL|iain|192.168.0.131|IAIN",
+             f"{now - 10}|audit|LOGFAIL|IAIN|SSH_PASSWORD:192.168.0.131|SSH$SSH",
+             f"{now - 10}|audit|LOGFAIL|BOB|SSH_PASSWORD:192.168.0.131|SSH$SSH")
+    b.from_start()
+    rc, out = b.run(plain, cycles=1)
+    h = hooks()
+    check("the Alpha's two records for one failed login are one event; "
+          "a second attempt 10 s later is counted (one summary of 1, not 2), "
+          "its twin dropped silently; another person is another event",
+          rc == 0 and [e["kind"] for e in h] == ["event", "event", "summary"] and
+          h[2]["count"] == 1 and "BOB" in h[1]["title"] and
+          "2 events, 1 throttled, 1 summaries, 2 duplicates" in out, out + repr(h))
 
     # ---- --test ---------------------------------------------------------
     reset()
@@ -415,7 +444,7 @@ def main(plain, tls, vmsstub):
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          text=True, env=e)
     time.sleep(1.5)
-    b.append(logfail("B1"), logfail("B1"), logfail("B1"))
+    b.append(*apart(3, "B1"))
     time.sleep(2.0)
     open(stop, "w").close()
     try:

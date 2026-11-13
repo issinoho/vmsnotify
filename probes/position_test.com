@@ -3,9 +3,16 @@ $! position_batch.com in between: a queue with one executor cannot be
 $! waited on from inside its own job). No P1: everything.
 $! position_test.com -- does a saved read position survive a new process?
 $ set noon
-$ set default USER$ROOT:[IAIN.VMSNOTIFY]
-$ if f$search("[.build]probe_position.exe") .eqs. "" then goto noexe
-$ pp := $USER$ROOT:[IAIN.VMSNOTIFY.BUILD]probe_position.exe
+$ old_default = f$environment("DEFAULT")
+$! The work directory is the one above this procedure's (probes/).
+$ here = f$parse(f$environment("PROCEDURE"),,,"DEVICE") + -
+         f$parse(f$environment("PROCEDURE"),,,"DIRECTORY")
+$ set default 'here'
+$ set default [-]
+$ work = f$environment("DEFAULT")
+$ exe = f$extract(0, f$length(work) - 1, work) + ".BUILD]probe_position.exe"
+$ if f$search(exe) .eqs. "" then goto noexe
+$ pp := $'exe'
 $ say := write sys$output
 $ say "node ", f$getsyi("NODENAME"), " ", f$getsyi("VERSION"), " ", f$getsyi("ARCH_NAME")
 $ say "user ", f$getjpi("","USERNAME")
@@ -46,5 +53,6 @@ $ goto done
 $ noexe:
 $ write sys$output "probe_position.exe missing"
 $ done:
+$ set default 'old_default'
 $ say "POSITION-TEST-END"
 $ exit 1

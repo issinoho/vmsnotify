@@ -7,6 +7,9 @@
  *
  *     TIME|opcom|TEXT                  \n in TEXT starts a new line
  *     TIME|audit|TYPE|USER|REMOTE      TYPE is NSADEF's: LOGFAIL, SYSUAF
+ *     TIME|audit|TYPE|USER|REMOTE|AUDITUSER    the same, with a username
+ *                                      too, as the Alpha writes (USER is
+ *                                      the record's remote username)
  *
  * TIME is Unix seconds, or 0 for "when read". Lines starting with # do
  * not count; a last line without its newline is not there yet. The file
@@ -63,7 +66,8 @@ static size_t put_pkt(unsigned char *b, size_t at, unsigned type,
 
 /* An audit record as x86 writes its login failures, of the given type. */
 static void audit_rec(vn_log_rec *r, unsigned type, const char *user,
-                      const char *node, vn_u64 when_ns)
+                      const char *node, const char *audit_user,
+                      vn_u64 when_ns)
 {
     unsigned char b[400], ts[8];
     /* when_ns as a VMS time: 100 ns units from 17-Nov-1858. */
@@ -88,6 +92,12 @@ static void audit_rec(vn_log_rec *r, unsigned type, const char *user,
     }
     if (nl > 0) {
         at = put_pkt(b, at, 44, node, nl);
+        count++;
+    }
+    if (audit_user != NULL && audit_user[0] != '\0') {
+        size_t al = strlen(audit_user);
+
+        at = put_pkt(b, at, 56, audit_user, al > 64 ? 64 : al);
         count++;
     }
     at = put_pkt(b, at, 50, ts, 8);
@@ -395,7 +405,11 @@ static int read_file(vn_log_rec *recs, size_t max, size_t *n, int *more,
             opcom_rec(&recs[*n], f1, t);
             recs[*n].file = cfg->opcom_file;
         } else {
-            audit_rec(&recs[*n], nsa_code(f1), f2, f3, t);
+            char *au = strchr(f3, '|');
+
+            if (au != NULL)
+                *au++ = '\0';
+            audit_rec(&recs[*n], nsa_code(f1), f2, f3, au, t);
             recs[*n].file = cfg->audit_file;
         }
         after[*n].kind = k;
@@ -447,7 +461,7 @@ static void read_made_up(vn_log_rec *recs, size_t max, size_t *n, int *more,
             vn_snprintf(user, sizeof user, "U%lu", k);
             vn_snprintf(node, sizeof node, "SSH_PASSWORD:192.0.2.%lu",
                         k % 250 + 1);
-            audit_rec(&recs[*n], 5, user, node, when);
+            audit_rec(&recs[*n], 5, user, node, NULL, when);
             recs[*n].file = cfg->audit_file;
         } else {
             vn_snprintf(text, sizeof text, "Message from user SYSTEM on "

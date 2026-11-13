@@ -180,7 +180,8 @@ typedef struct {
     char pos_saved[2][VN_LOGS_POS_MAX];     /* as the file has them now */
     int pos_failed;
 
-    unsigned long records, ignored, events, throttled, summaries, notices;
+    unsigned long records, ignored, events, throttled, duplicates, summaries,
+        notices;
 } agent;
 
 static vn_log_rec log_recs[LOG_BATCH];
@@ -524,9 +525,18 @@ static void handle_record(agent *a, const vn_log_rec *rec)
     }
     vn_format_event(&m, a->node, r, rec);
     vn_throttle_key(rec, key, sizeof key);
-    if (!vn_throttle_admit(&a->thr, r, key, m.title, mono_s())) {
+    switch (vn_throttle_admit(&a->thr, r, key, m.title, mono_s(),
+                              vn_throttle_rec_s(rec))) {
+    case VN_THR_COUNTED:
         a->throttled++;
         return;
+    case VN_THR_DUP:
+        /* The twin of an event just sent (Alpha writes two records for
+           one SSH login failure): only counted here, in the final line. */
+        a->duplicates++;
+        return;
+    default:
+        break;
     }
     a->events++;
     deliver(a, &m);
@@ -803,9 +813,9 @@ static unsigned account(agent *a, const char *word, unsigned long cycles)
         dropped += s->dropped;
     }
     say("%s: %lu cycles, %lu records, %lu ignored, %lu events, %lu "
-        "throttled, %lu summaries, %lu notices; %lu sent, %lu failed "
+        "throttled, %lu summaries, %lu duplicates, %lu notices; %lu sent, %lu failed "
         "attempts, %lu dropped, %u unsent", word, cycles, a->records,
-        a->ignored, a->events, a->throttled, a->summaries, a->notices, sent,
+        a->ignored, a->events, a->throttled, a->summaries, a->duplicates, a->notices, sent,
         failed, dropped, lost);
     return lost;
 }
