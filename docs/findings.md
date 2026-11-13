@@ -5,7 +5,8 @@ answered for a machine only when that machine has a row. vmsotel's `docs/finding
 holds the evidence for what was copied from it (the readers, the parsers, the transport).
 
 Machines: **x86** = X86VMS, OpenVMS E9.2-4 (a QEMU guest), VSI C V7.7. **IA64** = MYI64,
-an rx2660, V8.4-2L3, VSI C V7.4-001 (its rows are in "IA64", below). Alpha: not yet run.
+an rx2660, V8.4-2L3, VSI C V7.4-001 (its rows are in "IA64", below). **Alpha** = AXPBOX, an
+AlphaServer DS10L under Charon-AXP, V8.4-2L2, VSI C V7.4-002 ("Alpha", below).
 
 ## The read position across processes (design D8)
 
@@ -101,8 +102,35 @@ holds one URL, the Gotify application's. Plain HTTP on the LAN.
 
 | # | Question | Linux | x86 | IA64 | Evidence / notes |
 | --- | --- | --- | --- | --- | --- |
-| R1 | `--test` is accepted by each real server | yes | yes | yes | On each: `ok    gotify (gotify): HTTP 200`, `ok    apprise (apprise): HTTP 200`, `ok    ntfy (ntfy): HTTP 200`, `ok: 0 of 3 endpoints failed`, exit `%X00000001` on VMS. Read back from ntfy's topic: `THINKPAD-X280: vmsnotify test` (priority 3, tag `openvms`), `X86VMS: vmsnotify test`, `MYI64: vmsnotify test`. Gotify's own list was not read back (it needs a client token; the application's gives 401), so its messages and Apprise's forwarding are for the user's eyes |
+| R1 | `--test` is accepted by each real server | yes | yes | yes | (Alpha too: the same three `ok` lines, and `AXPBOX: vmsnotify test` read back from ntfy.) On each: `ok    gotify (gotify): HTTP 200`, `ok    apprise (apprise): HTTP 200`, `ok    ntfy (ntfy): HTTP 200`, `ok: 0 of 3 endpoints failed`, exit `%X00000001` on VMS. Read back from ntfy's topic: `THINKPAD-X280: vmsnotify test` (priority 3, tag `openvms`), `X86VMS: vmsnotify test`, `MYI64: vmsnotify test`. Gotify's own list was not read back (it needs a client token; the application's gives 401), so its messages and Apprise's forwarding are for the user's eyes |
 | R2 | The token file on VMS | - | yes | yes | `gotify.token;1 … (RWED,RWED,,)` in the work directory; the agent read it (`token_file`) and nothing printed it |
 
-Not yet: events (not only the test notice) to the real servers; the Alpha; TLS in front of
-any of them.
+Not yet: events (not only the test notice) to the real servers; TLS in front of any of
+them.
+
+## Alpha
+
+AXPBOX, 2026-11-13, batch jobs with `tools/vms.sh alpha batch` in `DISK$WORK:[IAIN.VMSNOTIFY]`,
+as IAIN, who has every privilege there by default. **No source change was needed.**
+
+| # | Alpha | Evidence / notes |
+| --- | --- | --- |
+| P1 | yes | `vmsnotify probes, AXPBOX, OpenVMS V8.4-2L2 Alpha`, `built:  probe_position`, no message |
+| P2, P3 | yes | Saved in one batch job (entry 531; FID `(2085,1,0)`), resumed in the next (532): `PASS open`, `PASS fid matches the saved one`, `PASS get by RFA … 20 bytes: RECORD 00008 created`, `PASS record matches the saved length and first 20 bytes`, `7 records followed` |
+| P4, P5 | yes; a clean failure | `opened fid (2092,1,0)`, `DETECTED fid differs: this is a DIFFERENT FILE (newer version)`; `FAIL open status=00018292 (RMS$_FNF)` |
+| P6, P7 | yes | `OPERATOR.LOG;156`, fid `(4711,8,0)`, `read 165 records`, `saved record 163 of 165: … len=0`, resume all PASS. `SECURITY.AUDIT$JOURNAL;11`, fid `(9078,6,0)`, `read 43 records`, `saved record 41 of 43: … len=1029`, resume all PASS |
+| B1 | yes | `vmsnotify build, AXPBOX, OpenVMS V8.4-2L2 Alpha`, `built: vmsnotify.exe vmsnotify_tls.exe`, no message: the `/FLOAT=IEEE_FLOAT` branch's first run. Nothing in the agent uses floating point today |
+| B2, B3 | yes | `starting on AXPBOX`; `starting at the end of …OPERATOR.LOG;156 (165 records, 0 s); … SECURITY.AUDIT$JOURNAL;11 (43 records, 0 s)` |
+| B4–B6 | yes (a stand-in) | `ok: 0 of 4 endpoints failed`; `8 sent, 0 failed attempts`; `opcom = rms1 SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;156 4711,8,0 R 12,0,282 18 …`, `audit = rms1 …SECURITY.AUDIT$JOURNAL;11 9078,6,0 R 48,0,364 98 …`; then `resuming in … at the saved position (0 records written while stopped)` for both |
+| B7, B8 | yes, in about 1 s; **two records per failed login** | Two wrong-password SSH logins at 19:04:21 and :31: `19:04:24Z event login-failure [high] to g, a, n, w: AXPBOX: Login failure: remote user iain from 192.168.0.131`, and a second event the same second; summaries `1 more: Login failure: …` at 19:04:54; `4 records, 0 ignored, 2 events, 2 throttled, 2 summaries`. SHOW INTRUSION: two SUSPECT entries, `192.168.0.131::iain` and `SSH_PASSWORD:192.168.0.131::IAIN` |
+| B9 | Without READALL: says so, sends a notice, does not crash | `set process/privileges=(noall,netmbx,tmpmbx)`: `logs: cannot read SYS$MANAGER:OPERATOR.LOG: %RMS-E-FNF, file not found; cannot read SYS$MANAGER:SECURITY.AUDIT$JOURNAL: %RMS-E-PRV, insufficient privilege or file protection violation`, `notice [high] to g, a, n, w: AXPBOX: vmsnotify cannot read a log`, `done: 2 cycles … 3 notices; 12 sent`, exit `%X00000001`. With READALL added it read both. (Alpha only; not run on x86 or IA64) |
+
+Different on Alpha: **one failed SSH password login makes two LOGFAIL records** -- one from
+`SSH$SSHD-SESSION.EXE` (user IAIN, remote user `iain`, remote node `192.168.0.131`) and one
+as username `SSH$SSH` (remote user `IAIN`, remote node `SSH_PASSWORD:192.168.0.131`, status
+`%X00D3803C`) -- neither with a terminal. x86 and IA64 make one, with a terminal. Their
+users and remote nodes differ, so the throttle sees two groups and the user gets two
+notifications for one attempt. Not yet dealt with.
+
+The probe's driver procedures name `USER$ROOT:[IAIN.VMSNOTIFY]`; for the Alpha they were
+edited on the way up. They should take their directory from where they are.
