@@ -92,3 +92,17 @@ file -- the reverse of x86 -- so it is a property of the file, not of system log
 three words are kept either way.
 
 Not yet on IA64: as x86's list, and a break-in record (two failures make only a SUSPECT).
+
+## The real servers
+
+Gotify 3.1.1, the Apprise API (caronc/apprise 2.1.0) and ntfy v2.37.2, from
+`tools/test-endpoints/compose.yaml`, on docker-nuc, 2026-11-13. The Apprise key `vms`
+holds one URL, the Gotify application's. Plain HTTP on the LAN.
+
+| # | Question | Linux | x86 | IA64 | Evidence / notes |
+| --- | --- | --- | --- | --- | --- |
+| R1 | `--test` is accepted by each real server | yes | yes | yes | On each: `ok    gotify (gotify): HTTP 200`, `ok    apprise (apprise): HTTP 200`, `ok    ntfy (ntfy): HTTP 200`, `ok: 0 of 3 endpoints failed`, exit `%X00000001` on VMS. Read back from ntfy's topic: `THINKPAD-X280: vmsnotify test` (priority 3, tag `openvms`), `X86VMS: vmsnotify test`, `MYI64: vmsnotify test`. Gotify's own list was not read back (it needs a client token; the application's gives 401), so its messages and Apprise's forwarding are for the user's eyes |
+| R2 | The token file on VMS | - | yes | yes | `gotify.token;1 … (RWED,RWED,,)` in the work directory; the agent read it (`token_file`) and nothing printed it |
+
+Not yet: events (not only the test notice) to the real servers; the Alpha; TLS in front of
+any of them.
