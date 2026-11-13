@@ -54,4 +54,21 @@ url = http://192.168.0.218:18081
 topic = openvms
 ```
 
-`docker compose down -v` removes the containers and all their data.
+## TLS (ports 18443, 18444, 18445)
+
+The `tls` service puts https in front of the three: 18443 for Gotify, 18444
+for the Apprise API, 18445 for ntfy. `tls-cert` makes a self-signed
+certificate for IP 192.168.0.218 the first time (kept in the `tls-cert`
+volume). It is its own root, so it is the `cafile` vmsnotify checks against.
+Fetch it from any machine:
+
+```sh
+openssl s_client -connect 192.168.0.218:18443 </dev/null 2>/dev/null | openssl x509 > test-endpoints.crt
+```
+
+and give it to vmsnotify as, for example,
+`cafile = VMSNOTIFY$ROOT:[CONF]TEST-ENDPOINTS.CRT` with
+`url = https://192.168.0.218:18443`.
+
+`docker compose down -v` removes the containers and all their data, the
+certificate included.

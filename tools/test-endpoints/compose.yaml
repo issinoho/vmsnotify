@@ -46,7 +46,46 @@ services:
     environment:
       NTFY_BASE_URL: http://192.168.0.218:18081
 
+  # TLS in front of the three, for vmsnotify's TLS tests: https on 18443
+  # (Gotify), 18444 (Apprise API) and 18445 (ntfy). The certificate is
+  # self-signed for IP 192.168.0.218, made once by `tls-cert` into the
+  # tls-cert volume; being its own root, it is also the cafile vmsnotify
+  # verifies against (fetch it with openssl s_client, as the README says).
+  tls-cert:
+    image: alpine/openssl:3.5.9
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        test -s /certs/server.crt ||
+        openssl req -x509 -newkey rsa:2048 -nodes -days 825
+        -subj /CN=vmsnotify-test-endpoints
+        -addext subjectAltName=IP:192.168.0.218
+        -keyout /certs/server.key -out /certs/server.crt
+    volumes:
+      - tls-cert:/certs
+
+  tls:
+    image: nginx:1.30.6-alpine
+    restart: unless-stopped
+    depends_on:
+      tls-cert:
+        condition: service_completed_successfully
+      gotify:
+        condition: service_started
+      apprise:
+        condition: service_started
+      ntfy:
+        condition: service_started
+    ports:
+      - "18443:18443"
+      - "18444:18444"
+      - "18445:18445"
+    volumes:
+      - tls-cert:/certs:ro
+      - ./tls.conf:/etc/nginx/conf.d/default.conf:ro
+
 volumes:
   gotify-data:
   apprise-config:
   ntfy-cache:
+  tls-cert:
