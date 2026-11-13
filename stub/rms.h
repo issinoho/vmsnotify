@@ -7,11 +7,28 @@
 #ifndef STUB_RMS_H
 #define STUB_RMS_H
 
+/* The file identification is three words that also have names of their
+   own, as in VMS's nam.h (where the overlay is spelled the same way:
+   C99 has no anonymous unions). The stub's is the file's inode. */
 struct NAM {
     char *nam$l_rsa;
     unsigned char nam$b_rss;
     unsigned char nam$b_rsl;
+    union {
+        unsigned short nam$w_fid[3];
+        struct {
+            unsigned short nam$w_fid_num;
+            unsigned short nam$w_fid_seq;
+            unsigned char nam$b_fid_rvn;
+            unsigned char nam$b_fid_nmx;
+        } nam$r_fid_fields;
+    } nam$r_fid_overlay;
 };
+#define nam$w_fid     nam$r_fid_overlay.nam$w_fid
+#define nam$w_fid_num nam$r_fid_overlay.nam$r_fid_fields.nam$w_fid_num
+#define nam$w_fid_seq nam$r_fid_overlay.nam$r_fid_fields.nam$w_fid_seq
+#define nam$b_fid_rvn nam$r_fid_overlay.nam$r_fid_fields.nam$b_fid_rvn
+#define nam$b_fid_nmx nam$r_fid_overlay.nam$r_fid_fields.nam$b_fid_nmx
 
 struct FAB {
     char *fab$l_fna;

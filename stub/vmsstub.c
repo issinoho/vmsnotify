@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #include "descrip.h"
 #include "ssdef.h"
@@ -540,6 +541,17 @@ int sys$open(void *fabp)
             n = fab->fab$l_nam->nam$b_rss;
         memcpy(fab->fab$l_nam->nam$l_rsa, rsa, n);
         fab->fab$l_nam->nam$b_rsl = (unsigned char) n;
+    }
+    if (fab->fab$l_nam != NULL) {
+        /* The file's identification: its inode, which a file replaced
+           under the same name does not keep -- as a FID is not kept. */
+        struct stat sb;
+        unsigned long ino = stat(path, &sb) == 0 ? (unsigned long) sb.st_ino
+                                                 : 0;
+
+        fab->fab$l_nam->nam$w_fid[0] = (unsigned short) (ino & 0xffff);
+        fab->fab$l_nam->nam$w_fid[1] = (unsigned short) (ino >> 16 & 0xffff);
+        fab->fab$l_nam->nam$w_fid[2] = (unsigned short) (ino >> 32 & 0xffff);
     }
     return RMS$_NORMAL;
 }

@@ -1,18 +1,17 @@
 /*
- * vmsnotify, from vmsotel's src/transport/queue.h: the export queue.
+ * vmsnotify, from vmsotel's src/transport/queue.h: a queue of messages waiting to be sent.
  *
- * Encoded payloads wait here until the collector takes them. It holds
- * a fixed number of payloads of a fixed maximum size, allocated once at
- * startup; when it is full, one is dropped to make room. A VMS
- * production system must never fill its memory or its disk because a
- * monitoring server is down (docs/design.md, Running it).
+ * The agent keeps one for each endpoint: encoded requests wait here
+ * until that server takes them. It holds a fixed number of a fixed
+ * maximum size, allocated once at startup; when it is full, one is
+ * dropped to make room. A VMS production system must never fill its
+ * memory or its disk because a notification server is down.
  *
- * Each payload carries a kind, the caller's own number, which the agent
- * uses to say where it goes: metrics to one path, logs to another. When
- * the queue is full, the oldest payload of the kind set with
- * vn_queue_drop_first goes first, and only if there is none the oldest
- * of any: a metrics export is a snapshot the next one supersedes, but a
- * log payload holds records nothing will send again.
+ * Each entry carries a kind, the caller's own number. When the queue is
+ * full, the oldest entry of the kind set with vn_queue_drop_first goes
+ * first, and only if there is none the oldest of any (vmsotel drops
+ * metrics before logs that way; vmsnotify sets no kind, so the oldest
+ * message goes).
  */
 
 #ifndef VN_QUEUE_H

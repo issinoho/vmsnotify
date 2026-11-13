@@ -15,9 +15,10 @@ operator requests -- to notification servers you run yourself:
 The agent connects out to them directly. No third-party or cloud service is involved,
 and nothing listens on the VMS system.
 
-> **Status:** in development. The core -- rules, throttling, messages, the four endpoint
-> formats, the configuration -- is written and tested on Linux. The agent itself, and
-> anything on OpenVMS, comes next ([`docs/design.md`](docs/design.md), "Phases").
+> **Status:** in development. The agent runs end to end on Linux, with a stand-in for the
+> two logs: rules, throttling, the four endpoint formats, retries, TLS, and a read
+> position that survives a restart, all tested against a local stand-in for the four
+> servers. Nothing has run on OpenVMS yet ([`docs/design.md`](docs/design.md), "Phases").
 
 ## What it sends by default
 
@@ -54,8 +55,15 @@ action = ignore
 ## Building and testing (Linux)
 
 ```sh
-make check
+make check                                   # needs python3 and OpenSSL (headers and the openssl command)
+
+build/vmsnotify my.conf --test               # one notice to every endpoint
+build/vmsnotify my.conf --dry-run            # print what would be sent
+build/vmsnotify my.conf                      # run (on Linux the logs are made up)
 ```
+
+`build/vmsnotify_tls` is the same with https. `tools/fake_endpoints.py --serve PORT LOG`
+answers as all four servers would, for trying a configuration without them.
 
 ## Licence
 

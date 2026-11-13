@@ -1,10 +1,10 @@
 /*
- * vmsnotify, from vmsotel's src/transport/http.c: one OTLP/HTTP export. See http.h.
+ * vmsnotify, from vmsotel's src/transport/http.c: one HTTP POST. See http.h.
  *
- * Response handling follows docs/design.md: a 2xx is delivered, though
- * its body may report rejected points; 429 and 503 -- and any 5xx, or
- * no answer at all -- mean try again later, honouring Retry-After; any
- * other status means the request itself is wrong, so it is not retried.
+ * A 2xx is delivered; 429 and any 5xx -- and no answer at all -- mean
+ * try again later, honouring Retry-After; any other status means the
+ * request itself is wrong (a bad token, a missing topic), so it is not
+ * retried.
  */
 
 #include <ctype.h>
@@ -20,6 +20,7 @@
 #endif
 
 #define RESP_MAX 16384
+#define HEAD_MAX 2560           /* a path, the endpoint's headers, ours */
 
 /* ---- parsing ------------------------------------------------------- */
 
@@ -91,39 +92,8 @@ static const char *header(const char *head, size_t n, const char *name,
     return NULL;
 }
 
-/* A JSON member's value in body[0..n): a number or a string holding
-   one, as the int64 mapping allows either. */
-static int json_int(const char *body, size_t n, const char *key,
-                    long *out)
-{
-    size_t kl = strlen(key), i;
-
-    for (i = 0; i + kl + 2 < n; i++) {
-        size_t j;
-        long v = 0;
-        int digits = 0;
-
-        if (body[i] != '"' || memcmp(body + i + 1, key, kl) != 0 ||
-            body[i + 1 + kl] != '"')
-            continue;
-        j = i + kl + 2;
-        while (j < n && (body[j] == ' ' || body[j] == ':' || body[j] == '"'))
-            j++;
-        /* Nine digits fit a 32-bit long; no collector rejects more. */
-        while (j < n && body[j] >= '0' && body[j] <= '9' && digits < 9) {
-            v = v * 10 + (body[j] - '0');
-            j++;
-            digits++;
-        }
-        if (digits == 0)
-            return 0;
-        *out = v;
-        return 1;
-    }
-    return 0;
-}
-
-/* A JSON string member's value, unescaped no further than the copy. */
+/* A JSON string member's value, unescaped no further than the copy
+   and made printable. Leaves out alone if the member is absent. */
 static void json_str(const char *body, size_t n, const char *key,
                      char *out, size_t cap)
 {
@@ -139,15 +109,39 @@ static void json_str(const char *body, size_t n, const char *key,
         while (j < n && (body[j] == ' ' || body[j] == ':'))
             j++;
         if (j >= n || body[j] != '"')
-            return;
+            continue;           /* a number, or the word inside a string */
         for (j++; j < n && body[j] != '"' && o + 1 < cap; j++) {
+            unsigned char c;
+
             if (body[j] == '\\' && j + 1 < n)
                 j++;
-            out[o++] = body[j];
+            c = (unsigned char) body[j];
+            out[o++] = c >= 0x20 && c < 0x7f ? (char) c : ' ';
         }
         out[o] = '\0';
         return;
     }
+}
+
+/* The start of a body that is not JSON we know: its first printable
+   bytes, runs of anything else as one space. */
+static void body_start(const char *body, size_t n, char *out, size_t cap)
+{
+    size_t i, o = 0;
+
+    if (cap > 151)
+        cap = 151;
+    for (i = 0; i < n && o + 1 < cap; i++) {
+        unsigned char c = (unsigned char) body[i];
+
+        if (c > 0x20 && c < 0x7f)
+            out[o++] = (char) c;
+        else if (o > 0 && out[o - 1] != ' ')
+            out[o++] = ' ';
+    }
+    while (o > 0 && out[o - 1] == ' ')
+        o--;
+    out[o] = '\0';
 }
 
 int vn_http_parse_response(const char *resp, size_t n, vn_http_result *res)
@@ -161,7 +155,6 @@ int vn_http_parse_response(const char *resp, size_t n, vn_http_result *res)
     res->message[0] = '\0';
     res->retry_after_s = -1;
     res->have_date = 0;
-    res->rejected = -1;
 
     for (i = 0; i + 3 < n; i++)
         if (memcmp(resp + i, "\r\n\r\n", 4) == 0) {
@@ -202,17 +195,30 @@ int vn_http_parse_response(const char *resp, size_t n, vn_http_result *res)
                                  ? (long) (when - res->date_unix) : 0;
     }
 
-    json_int(body, body_len, "rejectedDataPoints", &res->rejected);
-    if (res->rejected < 0)      /* a logs request's partialSuccess */
-        json_int(body, body_len, "rejectedLogRecords", &res->rejected);
-    json_str(body, body_len, "errorMessage", res->message,
+    if (status >= 200 && status < 300)
+        return VN_HTTP_SENT;    /* its body is the server's business:
+                                   Gotify's echoes the message */
+
+    /* Why not: for the log. A chunked body starts with its length. */
+    v = header(resp, head_len, "Transfer-Encoding", &vlen);
+    if (v != NULL && vlen >= 7) {
+        const char *nl = memchr(body, '\n', body_len);
+
+        if (nl != NULL) {
+            body_len -= (size_t) (nl + 1 - body);
+            body = nl + 1;
+        }
+    }
+    json_str(body, body_len, "errorDescription", res->message,
              sizeof res->message);
+    if (res->message[0] == '\0')
+        json_str(body, body_len, "error", res->message, sizeof res->message);
     if (res->message[0] == '\0')
         json_str(body, body_len, "message", res->message,
                  sizeof res->message);
+    if (res->message[0] == '\0')
+        body_start(body, body_len, res->message, sizeof res->message);
 
-    if (status >= 200 && status < 300)
-        return VN_HTTP_SENT;
     if (status == 429 || status >= 500)
         return VN_HTTP_RETRY;
     return VN_HTTP_REJECTED;
@@ -250,14 +256,13 @@ int vn_http_post(const vn_http_target *t, const char *body, size_t len,
                  vn_http_result *res)
 {
     static char resp[RESP_MAX];
-    char head[512];
+    static char head[HEAD_MAX];
     stream s;
     size_t got = 0;
     int hl, outcome;
 
     memset(res, 0, sizeof *res);
     res->retry_after_s = -1;
-    res->rejected = -1;
     memset(&s, 0, sizeof s);
     s.timeout_ms = t->timeout_ms;
 
@@ -288,13 +293,17 @@ int vn_http_post(const vn_http_target *t, const char *body, size_t len,
     hl = vn_snprintf(head, sizeof head,
                   "POST %s HTTP/1.1\r\n"
                   "Host: %s:%s\r\n"
-                  "User-Agent: vmsotel/" VN_VERSION "\r\n"
-                  "Content-Type: application/json\r\n"
+                  "User-Agent: vmsnotify/" VN_VERSION "\r\n"
+                  "Content-Type: %s\r\n"
                   "Content-Length: %lu\r\n"
                   "Connection: close\r\n"
-                  "\r\n", t->path, t->host, t->port, (unsigned long) len);
+                  "%s"
+                  "\r\n", t->path, t->host, t->port,
+                  t->content_type != NULL ? t->content_type
+                                          : "application/json",
+                  (unsigned long) len, t->headers != NULL ? t->headers : "");
     if (hl < 0 || (size_t) hl >= sizeof head) {
-        vn_snprintf(res->message, sizeof res->message, "request line too long");
+        vn_snprintf(res->message, sizeof res->message, "request headers too long");
         outcome = VN_HTTP_REJECTED;
         goto done;
     }

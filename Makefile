@@ -1,15 +1,19 @@
 # vmsnotify, Linux side.
 #
-#   make            build the tests
+#   make            build the agent and the tests
 #   make check      run them: rules, throttle, formatting, the endpoint
 #                   encoders against tests/golden/, the configuration
-#                   (with the shipped example); the golden payloads through
-#                   tools/fake_endpoints.py's validators; the VMS log reader
-#                   compiled against stub/
+#                   (with the shipped example), the HTTP response parser;
+#                   the golden payloads through tools/fake_endpoints.py's
+#                   validators; then the agent end to end against
+#                   tools/fake_endpoints.py (tools/agent_test.py)
 #   make golden     rewrite tests/golden/ from the encoders; read the diff
 #                   before committing it
 #
-# The agent itself comes in phase 2 (docs/design.md, "Phases").
+#   build/vmsnotify           the agent, with the fake log source
+#   build/vmsnotify_tls       the same with TLS (OpenSSL)
+#   build/vmsnotify_vmsstub   the agent with the VMS log reader, against
+#                             stub/vmsstub.c: its logic, not VMS's behaviour
 
 CC      ?= cc
 STRICT  = -std=c99 -pedantic -Wall -Wextra -Werror
@@ -30,9 +34,13 @@ CORE_OBJ = $(B)/vn_types.o $(B)/logparse.o $(B)/rules.o $(B)/throttle.o \
            $(B)/json.o $(B)/format.o $(B)/endpoint.o $(B)/config.o
 
 TESTS = $(B)/test_types $(B)/test_logs $(B)/test_rules $(B)/test_endpoint \
-        $(B)/test_config
+        $(B)/test_config $(B)/test_http
 
-all: $(TESTS) $(B)/vms_logs.o
+# What every agent links besides its log source and its HTTP.
+AGENT_OBJ = $(CORE_OBJ) $(B)/queue.o $(B)/platform_posix.o
+AGENTS = $(B)/vmsnotify $(B)/vmsnotify_tls $(B)/vmsnotify_vmsstub
+
+all: $(TESTS) $(AGENTS)
 
 $(B):
 	mkdir -p $(B)
@@ -54,9 +62,39 @@ $(B)/endpoint.o: src/notify/endpoint.c $(HDRS) | $(B)
 $(B)/config.o: src/agent/config.c $(HDRS) | $(B)
 	$(CC) $(CFLAGS_) -c -o $@ $<
 
-# The VMS log reader, against the stub: it must at least compile here.
+$(B)/queue.o: src/transport/queue.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -c -o $@ $<
+$(B)/platform_posix.o: src/platform/platform_posix.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -c -o $@ $<
+$(B)/fake_logs.o: src/sources/fake/fake_logs.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -c -o $@ $<
+
+# The two that change with TLS.
+$(B)/http.o: src/transport/http.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -c -o $@ $<
+$(B)/agent.o: src/agent/agent.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -c -o $@ $<
+$(B)/http_tls.o: src/transport/http.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -DVN_WITH_TLS -c -o $@ $<
+$(B)/agent_tls.o: src/agent/agent.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -DVN_WITH_TLS -c -o $@ $<
+$(B)/tls.o: src/transport/tls.c $(HDRS) | $(B)
+	$(CC) $(CFLAGS_) -DVN_WITH_TLS -c -o $@ $<
+
+# The VMS log reader and what it needs of the system, against the stub.
 $(B)/vms_logs.o: src/sources/vms/vms_logs.c $(HDRS) stub/*.h | $(B)
 	$(CC) $(VMSISH) $(INC) -c -o $@ $<
+$(B)/vms_sys.o: src/sources/vms/vms_sys.c $(HDRS) stub/*.h | $(B)
+	$(CC) $(VMSISH) $(INC) -c -o $@ $<
+$(B)/vmsstub.o: stub/vmsstub.c stub/*.h | $(B)
+	$(CC) $(VMSISH) -c -o $@ stub/vmsstub.c
+
+$(B)/vmsnotify: $(B)/agent.o $(B)/http.o $(B)/fake_logs.o $(AGENT_OBJ)
+	$(CC) -o $@ $^
+$(B)/vmsnotify_tls: $(B)/agent_tls.o $(B)/http_tls.o $(B)/tls.o $(B)/fake_logs.o $(AGENT_OBJ)
+	$(CC) -o $@ $^ -lssl -lcrypto
+$(B)/vmsnotify_vmsstub: $(B)/agent.o $(B)/http.o $(B)/vms_logs.o $(B)/vms_sys.o $(B)/vmsstub.o $(AGENT_OBJ)
+	$(CC) -o $@ $^
 
 # The test compares the formatter with glibc's snprintf, whose output gcc
 # thinks may be truncated; it is the point of the test.
@@ -71,6 +109,9 @@ $(B)/test_endpoint: tests/test_endpoint.c $(CORE_OBJ)
 $(B)/test_config: tests/test_config.c $(CORE_OBJ)
 	$(CC) $(CFLAGS_) -o $@ $< $(CORE_OBJ)
 
+$(B)/test_http: tests/test_http.c $(B)/http.o $(B)/platform_posix.o $(B)/vn_types.o
+	$(CC) $(CFLAGS_) -o $@ $< $(B)/http.o $(B)/platform_posix.o $(B)/vn_types.o
+
 golden: $(B)/test_endpoint
 	$(B)/test_endpoint tests/golden --write
 
@@ -80,7 +121,11 @@ check: all
 	$(B)/test_rules
 	$(B)/test_endpoint tests/golden
 	$(B)/test_config vmsnotify.conf.example
+	$(B)/test_http
 	$(PYTHON) -I tools/fake_endpoints.py --validate tests/golden/*.txt
+	$(B)/vmsnotify --version | grep -qx 'vmsnotify 0.1.0'
+	! grep -n 'snprintf' src/agent/*.c src/transport/*.c src/sources/*/*.c src/platform/*.c | grep -v 'vn_v*snprintf'
+	$(PYTHON) -I tools/agent_test.py $(B)/vmsnotify $(B)/vmsnotify_tls $(B)/vmsnotify_vmsstub
 
 clean:
 	rm -rf $(B)

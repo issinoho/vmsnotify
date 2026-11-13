@@ -4,7 +4,11 @@ vmsnotify reads the OpenVMS operator log and security audit journal and sends wh
 matters to Gotify, an Apprise API server, ntfy or a webhook that the site runs itself.
 `docs/design.md` is the design and its decisions; read it first.
 
-**Status:** phase 1 (core, Linux only) is done. Nothing has run on VMS yet.
+**Status:** phases 1 (core) and 2 (the agent end to end on Linux) are done. Nothing of the
+agent has run on VMS yet. The read position across restarts (D8) is implemented in the
+fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says
+what it rests on holds there (`docs/design.md`, "The read position"); IA64 and Alpha have
+not been asked. Phase 2 was not run against the real containers on docker-nuc.
 
 ## Where it comes from
 
@@ -18,11 +22,21 @@ lessons; the ones that matter here are repeated below.
 ## Build and test
 
 ```sh
-make check     # rules, throttle, format, endpoint encoders against tests/golden/,
-               # configuration (with the shipped example), golden payloads through
-               # tools/fake_endpoints.py's validators, the VMS reader against stub/
+make check     # unit tests: rules, throttle, format, endpoint encoders against
+               # tests/golden/, configuration (with the shipped example), HTTP answers;
+               # golden payloads through tools/fake_endpoints.py's validators; then
+               # tools/agent_test.py: the three agents end to end (about a minute)
 make golden    # rewrite tests/golden/ from the encoders; read the diff before committing
+
+build/vmsnotify CONF [--test | --dry-run] [--cycles N] [--position FILE] ...
 ```
+
+`build/vmsnotify` has the fake log source, `build/vmsnotify_tls` adds TLS,
+`build/vmsnotify_vmsstub` has the VMS reader against `stub/` (it tests the reader's logic,
+not what RMS does). The fake source reads the file named by `VMSNOTIFY_FAKE_LOG_FILE`,
+one record a line (`src/sources/fake/fake_logs.c` has the format), which is how
+`agent_test.py` says what the logs hold and when. A new end-to-end check must be seen to
+fail without what it checks.
 
 C99 with `-pedantic -Wall -Wextra -Werror`; the VMS sources drop only `-pedantic` (for
 `$`). Do not weaken that. A golden payload changes only on purpose.
@@ -45,7 +59,9 @@ containers on docker-nuc (192.168.0.218), which the user runs; there is no SSH t
   are tested here.
 - **Item lists assume 32-bit pointers**; code linking OpenSSL's `..._SHR32` uses
   `/POINTER_SIZE=32`.
-- **No secrets in URLs or logs.** Tokens in headers and token files only.
+- **No secrets in URLs or logs.** Tokens in headers and token files only. Never pass a
+  request header to the log; a server's answer goes through `scrub` first (`agent.c`).
+  `agent_test.py` searches every line every run wrote for each secret.
 - **TLS is always verified.** No option to skip it.
 
 ## OpenVMS lessons (from vmsotel and vms-beszel)

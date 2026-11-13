@@ -3,20 +3,36 @@
 
     fake_endpoints.py --validate FILE...   check golden payloads (tests/golden)
                                            as each server would read them
-    fake_endpoints.py --serve PORT LOG     answer all four APIs on 127.0.0.1:PORT,
+    fake_endpoints.py --serve PORT LOG [TLSDIR]
+                                           answer all four APIs on 127.0.0.1:PORT,
                                            appending each request to LOG as JSON
-                                           (one line each); for the agent's tests
+                                           (one line each); with TLSDIR, over TLS
+                                           with a self-signed certificate made
+                                           there (server.crt is the CA to give
+                                           the agent as cafile)
 
 What each validator checks is what the real server needs (Gotify's
 /message with X-Gotify-Key and an integer priority, Apprise API's
 /notify/<key> with title, body and type, ntfy's /<topic> with Title and
-Priority headers, the webhook's documented event). The --serve mode can
-also misbehave on request, for the retry tests: a path ending /fail503
-answers 503 with Retry-After: 1, /fail401 answers 401, /hang never
-answers.
+Priority headers, the webhook's documented event).
+
+The server can also misbehave, by the request's path, for the agent's
+tests (tools/agent_test.py, which imports this file and starts it with
+start()):
+    .../fail503/...   503 with Retry-After: 1, always
+    .../flaky/...     the answers in Handler.script first, one each --
+                      (status, Retry-After or None) -- then as normal
+    .../fail401/...   401 with Gotify's error body
+    .../echo401/...   401 with a body that quotes the request's
+                      credentials back, as a careless server might
+    .../hang/...      no answer (until Handler.release is set)
+Every request is kept in Handler.seen, with the time it came.
 """
 import json
+import os
 import re
+import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -101,48 +117,112 @@ def validate_golden(files):
 class Handler(BaseHTTPRequestHandler):
     log_path = None
     lock = threading.Lock()
+    seen = []                   # every request: a dict, "at" is time.monotonic()
+    script = []                 # answers for .../flaky/..., consumed in order
+    release = threading.Event() # set to let .../hang/... requests go
 
     def log_message(self, *a):
         pass
 
+    def answer(self, status, reply=b"", retry_after=None):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        if retry_after is not None:
+            self.send_header("Retry-After", str(retry_after))
+        self.send_header("Content-Length", str(len(reply)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(reply)
+
     def do_POST(self):
         n = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(n)
-        if self.path.endswith("/hang"):
-            time.sleep(3600)
-        if self.path.endswith("/fail503"):
-            self.send_response(503)
-            self.send_header("Retry-After", "1")
-            self.end_headers()
+        entry = {"path": self.path, "headers": dict(self.headers),
+                 "body": body.decode("utf-8", "replace"), "at": time.monotonic()}
+        parts = self.path.split("/")
+        with self.lock:
+            self.seen.append(entry)
+            scripted = self.script.pop(0) if "flaky" in parts and self.script else None
+        if "hang" in parts:
+            entry["status"] = 0
+            self.release.wait(60)
             return
-        if self.path.endswith("/fail401"):
-            self.send_response(401)
-            self.end_headers()
-            self.wfile.write(b'{"error":"Unauthorized","errorCode":401}')
+        if scripted is not None:
+            entry["status"] = scripted[0]
+            self.answer(scripted[0], b'{"error":"scripted"}', scripted[1])
             return
-        entry = {"path": self.path, "headers": dict(self.headers), "body": body.decode("utf-8", "replace")}
+        if "fail503" in parts:
+            entry["status"] = 503
+            self.answer(503, b'{"error":"down for maintenance"}', 1)
+            return
+        if "fail401" in parts:
+            entry["status"] = 401
+            self.answer(401, b'{"error":"Unauthorized","errorCode":401,'
+                             b'"errorDescription":"you need to provide a valid access token"}')
+            return
+        if "echo401" in parts:
+            entry["status"] = 401
+            creds = " ".join(v for k, v in self.headers.items()
+                             if k.lower() in ("x-gotify-key", "authorization"))
+            self.answer(401, json.dumps({"error": "bad credentials: " + creds}).encode())
+            return
         try:
             entry["type"] = validate(self.path, dict(self.headers), body)
-            status, reply = 200, b'{"id":1}'
+            status, reply = 200, b'{"id":1,"message":"stored"}'
         except (Invalid, ValueError, UnicodeDecodeError) as e:
             entry["invalid"] = str(e)
             status, reply = 400, json.dumps({"error": str(e)}).encode()
-        with self.lock, open(self.log_path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(reply)))
-        self.end_headers()
-        self.wfile.write(reply)
+        entry["status"] = status
+        if self.log_path:
+            with self.lock, open(self.log_path, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        self.answer(status, reply)
+
+
+def make_cert(d, name="server"):
+    """A self-signed certificate for 127.0.0.1 in d: NAME.crt and NAME.key."""
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+         "-days", "1", "-subj", "/CN=fake-endpoints",
+         "-addext", "subjectAltName=IP:127.0.0.1",
+         "-keyout", os.path.join(d, name + ".key"),
+         "-out", os.path.join(d, name + ".crt")],
+        check=True, capture_output=True)
+    return os.path.join(d, name + ".crt")
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        pass                    # a refused TLS handshake is the client's news
+
+
+def start(port=0, tls_dir=None):
+    """Starts a server in a thread; returns it and its port."""
+    srv = Server(("127.0.0.1", port), Handler)
+    if tls_dir:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(os.path.join(tls_dir, "server.crt"),
+                            os.path.join(tls_dir, "server.key"))
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, srv.server_address[1]
 
 
 def main(argv):
     if len(argv) >= 2 and argv[1] == "--validate":
         return validate_golden(argv[2:])
-    if len(argv) == 4 and argv[1] == "--serve":
+    if len(argv) in (4, 5) and argv[1] == "--serve":
         Handler.log_path = argv[3]
-        ThreadingHTTPServer(("127.0.0.1", int(argv[2])), Handler).serve_forever()
-        return 0
+        if len(argv) == 5:
+            print("CA certificate for cafile:", make_cert(argv[4]))
+        start(int(argv[2]), argv[4] if len(argv) == 5 else None)
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            return 0
     print(__doc__, file=sys.stderr)
     return 2
 

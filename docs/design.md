@@ -33,8 +33,9 @@ AUDIT JOURNAL ┘  (vmsotel)     └─ (pure, tested on Linux)    ├─ queue 
 ```
 
 One loop: read a batch from both files, match each record against the rules, throttle,
-format per endpoint, enqueue, send, then commit the read position, so nothing is lost and
-nothing is sent twice.
+format per endpoint, enqueue, commit the read position and save it, then send. A record
+is dealt with once its message is queued or a rule has decided against it; what is queued
+and not yet sent when the agent stops is logged as lost, as vmsotel does.
 
 | Module | File | Pure |
 |---|---|---|
@@ -44,9 +45,11 @@ nothing is sent twice.
 | Messages | `src/notify/format.c` | yes |
 | Endpoint encoders | `src/notify/endpoint.c`, `json.c` | yes |
 | Configuration | `src/agent/config.c` | yes |
-| Log reader (from vmsotel) | `src/sources/vms/vms_logs.c` | no |
+| Log reader (from vmsotel) | `src/sources/vms/vms_logs.c`, `vms_sys.c` | no |
+| Fake log source, for Linux | `src/sources/fake/fake_logs.c` | no |
 | HTTP, TLS, queue (from vmsotel) | `src/transport/` | no |
-| Agent loop | `src/agent/agent.c` (phase 2) | no |
+| Platform (from vmsotel) | `src/platform/` | no |
+| Agent loop | `src/agent/agent.c` | no |
 
 ## Default rules
 
@@ -72,6 +75,51 @@ opens a window (default 300 s); repeats inside it are counted, and one summary f
 when it ends ("19 more: Login failure ..."). A table entry that cannot be had means the
 event is sent, never dropped.
 
+## Sending
+
+Each endpoint has its own queue (`queue`, default 32 messages; the oldest is dropped when
+it is full, and that is logged) and is sent to on its own, one connection per message.
+
+| Answer | What the agent does |
+|---|---|
+| 2xx | Delivered |
+| None, 429, 5xx | Kept; tried again after 1 s, doubling to 5 minutes, or after `Retry-After` (up to an hour) if that is longer |
+| Anything else (401, 404) | Dropped, with the status, the path and the server's reason in the log: sending it again cannot help |
+
+An endpoint that is down or hangs costs the others one `timeout` per attempt and nothing
+more. At a stop the summaries of the open windows and a "stopped" notice are queued, each
+queue gets one more try, and whatever is left is logged as lost.
+
+The agent's own notices (`notices = yes`): started and stopped (low), a log that cannot
+be read (high) or can be again (normal), records skipped at a start (high). They go to
+every endpoint whose `min_priority` they meet.
+
+`--test` sends one notice to every endpoint and prints each result. `--dry-run` prints
+what would be sent and to which endpoints, sends nothing, reads no token file and leaves
+the read position alone.
+
+## The read position (D8)
+
+The log source gives its committed position in each log as a one-line string, which the
+agent keeps in a file (`--position`; by default the configuration's name with the type
+`.pos`) and hands back at the next start. A source given one resumes there only if
+
+- it still names the same file and the same record (VMS: the version's specification,
+  its FID, and the record's RFA, length and first bytes), and
+- what was written after it is within the limits: no more than `catchup.max_records`
+  records, the oldest no older than `catchup.max_age`.
+
+Otherwise it starts at the end, as it does with no saved position, and the agent sends a
+notice saying what was skipped and why. The limits are all or nothing: one record too
+old skips everything waiting. With either limit 0 there is no catching up.
+
+On VMS the count is of what follows the saved record in that version plus, if the name
+now leads to another version, all of that one. x86 has answered the question this rests
+on (`probes/probe_position.c`): a saved specification and RFA find the same record from
+another process, in the real logs; the FID's three words prove the file; a deleted
+version fails with RMS$_FNF; OPERATOR.LOG has records of no length. IA64 and Alpha have
+not been asked, and `vms_logs.c`'s own code for it has run only against `stub/`.
+
 ## Priorities
 
 | vmsnotify | Gotify | ntfy | Apprise type |
@@ -91,7 +139,10 @@ as `?` and line breaks as spaces, so no text can start a header of its own.
 
 The agent's account: NETMBX, TMPMBX and READALL (both logs need it; vmsotel findings 27,
 36), no WORLD, no login of any kind. Token files in `[CONF]`, owned by the account, no
-group or world access; tokens never logged. TLS always verified, against `cafile` or the
+group or world access; tokens never logged: the agent logs no request header, and a
+server's answer only after anything equal to the endpoint's token, password or
+basic-authentication value has been struck out of it. A token file must hold one
+printable word; an empty one stops the start. TLS always verified, against `cafile` or the
 system's CAs; there is no option to skip it. The audit parser never copies a password or
 command-line packet (vmsotel's rule).
 
@@ -100,11 +151,22 @@ command-line packet (vmsotel's rule).
 1. **Core, Linux only** -- done: the copied code builds and its tests pass; rules,
    throttle, format, encoders, configuration, with tests and golden payloads checked by
    `tools/fake_endpoints.py`'s validators.
-2. **Agent end to end on Linux** against `tools/fake_endpoints.py --serve` and real
-   Gotify, apprise-api and ntfy containers on docker-nuc: delivery, retries, `Retry-After`,
-   a down endpoint, TLS, summaries, `--test`, `--dry-run`.
+2. **Agent end to end on Linux** -- done against `tools/fake_endpoints.py`
+   (`tools/agent_test.py`, in `make check`): all four endpoint types delivered and valid;
+   credentials in headers only; `to` and `min_priority`; a 503 with `Retry-After` kept and
+   sent again; a 401 dropped without a retry; a hanging endpoint and one that is down
+   while the others get theirs; a full queue; TLS verified against the right CA and
+   refused against the wrong one and against the system's; a burst as one event and one
+   summary; `--test`; `--dry-run`; stop file and SIGTERM; a restart resuming without loss
+   or repeats, the catch-up limits, a replaced log; an unreadable log; token files; and no
+   secret in any line the agent wrote. The VMS reader's position code runs the same way
+   against `stub/`. **Not done:** a run against the real Gotify, apprise-api and ntfy
+   containers on docker-nuc (`tools/test-endpoints/`).
 3. **Probes on x86, IA64, Alpha**: the read position across process restarts, REPLY/LOG
-   and NEW_LOG (D8 depends on it).
-4. **VMS agent**: build procedures, an hour detached on each machine with induced events
+   and NEW_LOG (D8 depends on it). x86 has answered the first ("The read position");
+   IA64 and Alpha have not.
+4. **VMS agent**: build procedures, the node name from `SYI$_NODENAME`
+   (`vn_platform_node` gives the TCP/IP host name until then), where the position file
+   lives and its version limit, an hour detached on each machine with induced events
    reaching Gotify.
 5. **Kit** for X86VMS, I64VMS, AXPVMS; install, upgrade, remove; release.

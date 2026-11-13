@@ -24,6 +24,28 @@
  *   - Times in both files are local: the system's differential is read
  *     on every read, so the hour after a summer-time change is right.
  *
+ * The read position across restarts (docs/design.md, D8) is vmsnotify's
+ * addition: pos_format, pos_parse, restore and their use in read_file,
+ * below "the saved position". What it rests on was probed on x86
+ * (probes/probe_position.c):
+ *   - A record's RFA, kept with the file's specification with its
+ *     version, finds the same record from another process later, in a
+ *     file written to since: in test files and in the real OPERATOR.LOG
+ *     and SECURITY.AUDIT$JOURNAL, opened as r_open opens them.
+ *   - The NAM's resultant specification is a logical form
+ *     (SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;251) and reopens; it is the FID
+ *     that proves the file is the same one. All three of its words are
+ *     kept and compared: the third (RVN, and NMX in its high byte) is
+ *     not zero on the system's logs (256).
+ *   - A saved version that has been deleted fails to open (RMS$_FNF):
+ *     that is "start at the end and say what was skipped".
+ *   - OPERATOR.LOG has records of no length, so the record saved may
+ *     have length 0 and no first bytes; the position's format allows it.
+ * NOT YET PROBED on IA64 or Alpha, and this code itself has run only
+ * against stub/, whose RFA is a byte offset and whose FID is an inode:
+ * phase 4 is its first run on VMS. If a machine says no, restore()
+ * becomes "return 0" there and the agent starts at the end, saying so.
+ *
  * Built without /POINTER_SIZE, like the rest of the VMS code.
  */
 
@@ -44,7 +66,7 @@
 #define AFTER_MAX 256           /* records one read can return */
 #define RSS_MAX   255           /* NAM$C_MAXRSS */
 
-/* in vms_source.c */
+/* in vms_sys.c */
 int vn_vms_system_tdf(long *tdf, char *err, size_t errcap);
 
 /* A record: where it is, and enough of it to know it again. */
@@ -60,6 +82,8 @@ typedef struct {
     const char *name;           /* as configured, no version */
     int primed;                 /* its end has been found */
     char spec[RSS_MAX + 1];     /* the version being read */
+    unsigned short fid[3];      /* and its file identification */
+    const char *saved;          /* an earlier run's position, tried once */
     int at_start;               /* committed: before its first record */
     vpos pos;                   /* committed: the last record consumed */
     /* OPCOM: the unfinished message at the end, as the last read saw it */
@@ -74,10 +98,13 @@ typedef struct {
     struct NAM nam;
     char name[RSS_MAX + 1];
     char rsa[RSS_MAX + 1];
+    unsigned short fid[3];
     int open;
 } rfile;
 
 static lfile files[2];
+static const vn_logs_config *cfg;
+static char notice[500];        /* for vn_logs_notice */
 static unsigned char rec[REC_MAX];
 
 /* Where each record of the last read leaves its file. */
@@ -129,6 +156,7 @@ static unsigned int r_open(rfile *f, const char *name)
     if (!(st & 1))
         return st;
     f->rsa[f->nam.nam$b_rsl] = '\0';
+    memcpy(f->fid, f->nam.nam$w_fid, sizeof f->fid);
     f->rab = cc$rms_rab;
     f->rab.rab$l_fab = &f->fab;
     f->rab.rab$l_ubf = (char *) rec;
@@ -203,7 +231,11 @@ static void add_msg(char *msg, size_t cap, const char *fmt, const char *a,
 
 void vn_logs_open(const vn_logs_config *c)
 {
+    cfg = c;
+    notice[0] = '\0';
     memset(files, 0, sizeof files);
+    files[0].saved = c->opcom_pos;
+    files[1].saved = c->audit_pos;
     files[0].kind = VN_LOG_OPCOM;
     files[0].on = c->opcom;
     files[0].name = c->opcom_file;
@@ -237,6 +269,7 @@ static int prime(lfile *lf, char *msg, size_t cap)
         count++;
     }
     strcpy(lf->spec, f.rsa);
+    memcpy(lf->fid, f.fid, sizeof lf->fid);
     r_close(&f);
     lf->primed = 1;
     lf->have_pend = 0;
@@ -245,6 +278,209 @@ static int prime(lfile *lf, char *msg, size_t cap)
         lf->pos = last;
     sprintf(note, "%lu records, %ld s", count, (long) (time(NULL) - t0));
     add_msg(msg, cap, "starting at the end of %s (%s)", lf->spec, note);
+    return 1;
+}
+
+/* ---- the saved position (probed on x86 only: see the top) ------------- */
+
+/*
+ * A committed position as one line:
+ *     rms1 SPEC FID,FID,FID S                       before its first record
+ *     rms1 SPEC FID,FID,FID R RFA,RFA,RFA LEN HEAD  after that record
+ * SPEC is the full specification with its version; the FID says it is
+ * still that file and not another of the same name; RFA, LEN and HEAD
+ * (the record's first bytes, in hex) are the vpos r_get_at checks. A
+ * record of no length, which OPERATOR.LOG has, has "-" for its HEAD.
+ */
+static void pos_format(const lfile *lf, char *buf, size_t cap)
+{
+    size_t n, i, hl = lf->pos.len < HEAD_MAX ? lf->pos.len : HEAD_MAX;
+
+    n = (size_t) vn_snprintf(buf, cap, "rms1 %s %u,%u,%u %s", lf->spec,
+                             (unsigned) lf->fid[0], (unsigned) lf->fid[1],
+                             (unsigned) lf->fid[2], lf->at_start ? "S" : "R");
+    if (lf->at_start || n >= cap)
+        return;
+    n += (size_t) vn_snprintf(buf + n, cap - n, " %u,%u,%u %u ",
+                              (unsigned) lf->pos.rfa[0],
+                              (unsigned) lf->pos.rfa[1],
+                              (unsigned) lf->pos.rfa[2],
+                              (unsigned) lf->pos.len);
+    for (i = 0; i < hl && n + 3 < cap; i++, n += 2)
+        vn_snprintf(buf + n, cap - n, "%02x", (unsigned) lf->pos.head[i]);
+    if (hl == 0 && n + 2 < cap)
+        strcpy(buf + n, "-");
+}
+
+static int hexval(int c)
+{
+    return c >= '0' && c <= '9' ? c - '0'
+         : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+}
+
+/* 1 if s is a position pos_format wrote, taken apart. */
+static int pos_parse(const char *s, char *spec, unsigned short fid[3],
+                     int *at_start, vpos *p)
+{
+    unsigned f0, f1, f2, r0, r1, r2, len;
+    char kind[2], hex[2 * HEAD_MAX + 2];
+    size_t hl, i;
+    int got;
+
+    memset(p, 0, sizeof *p);
+    hex[0] = '\0';
+    /* 255 is RSS_MAX and 128 is 2 * HEAD_MAX: sscanf wants them spelled. */
+    got = sscanf(s, "rms1 %255s %u,%u,%u %1s %u,%u,%u %u %128s", spec, &f0,
+                 &f1, &f2, kind, &r0, &r1, &r2, &len, hex);
+    if (got < 5 || f0 > 0xffff || f1 > 0xffff || f2 > 0xffff)
+        return 0;
+    fid[0] = (unsigned short) f0;
+    fid[1] = (unsigned short) f1;
+    fid[2] = (unsigned short) f2;
+    if (kind[0] == 'S') {
+        *at_start = 1;
+        return got == 5;
+    }
+    if (kind[0] != 'R' || got != 10 || r0 > 0xffff || r1 > 0xffff ||
+        r2 > 0xffff || len >= REC_MAX)
+        return 0;
+    *at_start = 0;
+    p->rfa[0] = (unsigned short) r0;
+    p->rfa[1] = (unsigned short) r1;
+    p->rfa[2] = (unsigned short) r2;
+    p->len = (unsigned short) len;
+    hl = len < HEAD_MAX ? len : HEAD_MAX;
+    if (hl == 0)
+        return strcmp(hex, "-") == 0;
+    if (strlen(hex) != 2 * hl)
+        return 0;
+    for (i = 0; i < hl; i++) {
+        int hi = hexval(hex[2 * i]), lo = hexval(hex[2 * i + 1]);
+
+        if (hi < 0 || lo < 0)
+            return 0;
+        p->head[i] = (unsigned char) (hi << 4 | lo);
+    }
+    return 1;
+}
+
+/*
+ * Counts what f holds from where it stands to its end, as the agent
+ * would get it: journal records, or operator messages. Stops counting
+ * past limit. *oldest is the time of the first of them, Unix seconds, if
+ * it is not known yet (0) and the record has one.
+ */
+static void count_rest(rfile *f, int kind, long tdf, unsigned long limit,
+                       unsigned long *count, unsigned long *oldest)
+{
+    static vn_log_rec r;        /* too large for the stack on VMS */
+    vn_opcom_parser parser;
+    vpos p;
+
+    vn_opcom_init(&parser, tdf);
+    while (*count <= limit && (r_get(f, &p) & 1)) {
+        int have;
+
+        if (kind == VN_LOG_AUDIT)
+            have = vn_nsa_decode(rec, p.len, tdf, &r) ? 1 : 2;
+        else
+            have = vn_opcom_feed(&parser, (const char *) rec, p.len, &r);
+        if (!have)
+            continue;
+        (*count)++;
+        if (*oldest == 0 && have == 1)
+            *oldest = (unsigned long) vn_qlo(vn_qdiv(r.time_ns, 1000000000u,
+                                                     NULL));
+    }
+    if (kind == VN_LOG_OPCOM && *count <= limit &&
+        vn_opcom_pending(&parser, &r)) {
+        (*count)++;
+        if (*oldest == 0)
+            *oldest = (unsigned long) vn_qlo(vn_qdiv(r.time_ns, 1000000000u,
+                                                     NULL));
+    }
+}
+
+static void skipped(const lfile *lf, const char *why, char *msg, size_t cap)
+{
+    add_msg(msg, cap, "%s: %s", lf->name, why);
+    add_msg(notice, sizeof notice, "%s: %s", lf->name, why);
+}
+
+/*
+ * The first read of a file an earlier run left a position for. Returns 1
+ * with the file primed at that position when it still is that file and
+ * that record and the catch-up limits allow what follows it; 0, having
+ * said why, when the caller must start at the end instead.
+ *
+ * What follows it is everything after the record in that version, and,
+ * if the name now leads to another version, all of that one too (the
+ * reader goes from a finished version to the newest: read_file).
+ */
+static int restore(lfile *lf, const char *saved, long tdf, char *msg,
+                   size_t cap)
+{
+    rfile f, g;
+    vpos p;
+    char spec[RSS_MAX + 1], why[300];
+    unsigned short fid[3];
+    unsigned long count = 0, oldest = 0, now = (unsigned long) time(NULL);
+    unsigned long age;
+    int at_start = 0;
+
+    if (!pos_parse(saved, spec, fid, &at_start, &p)) {
+        skipped(lf, "the saved read position cannot be understood; what "
+                "was written while vmsnotify was stopped is skipped", msg,
+                cap);
+        return 0;
+    }
+    if (!(r_open(&f, spec) & 1)) {
+        vn_snprintf(why, sizeof why, "%s, where vmsnotify stopped reading, "
+                    "is gone; what was written while it was stopped is "
+                    "skipped", spec);
+        skipped(lf, why, msg, cap);
+        return 0;
+    }
+    if (memcmp(f.fid, fid, sizeof fid) != 0 ||
+        (!at_start && !r_get_at(&f, &p))) {
+        r_close(&f);
+        vn_snprintf(why, sizeof why, "%s is not the file it was, or the "
+                    "record vmsnotify stopped at is no longer there; what "
+                    "was written while it was stopped is skipped", spec);
+        skipped(lf, why, msg, cap);
+        return 0;
+    }
+    count_rest(&f, lf->kind, tdf, cfg->max_records, &count, &oldest);
+    r_close(&f);
+    if ((r_open(&g, lf->name) & 1)) {
+        if (strcmp(g.rsa, spec) != 0)
+            count_rest(&g, lf->kind, tdf, cfg->max_records, &count, &oldest);
+        r_close(&g);
+    }
+    age = oldest != 0 && oldest < now ? now - oldest : 0;
+    if (count > cfg->max_records) {
+        vn_snprintf(why, sizeof why, "more than catchup.max_records (%lu) "
+                    "records were written while vmsnotify was stopped; "
+                    "they are skipped", cfg->max_records);
+        skipped(lf, why, msg, cap);
+        return 0;
+    }
+    if (count > 0 && (cfg->max_age_s == 0 || age > cfg->max_age_s)) {
+        vn_snprintf(why, sizeof why, "the oldest of %lu records written "
+                    "while vmsnotify was stopped is %lu s old, more than "
+                    "catchup.max_age (%lu); they are skipped", count, age,
+                    cfg->max_age_s);
+        skipped(lf, why, msg, cap);
+        return 0;
+    }
+    strcpy(lf->spec, spec);
+    memcpy(lf->fid, fid, sizeof lf->fid);
+    lf->at_start = at_start;
+    lf->pos = p;
+    lf->have_pend = 0;
+    lf->primed = 1;
+    vn_snprintf(why, sizeof why, "%lu records written while stopped", count);
+    add_msg(msg, cap, "resuming in %s at the saved position (%s)", spec, why);
     return 1;
 }
 
@@ -272,6 +508,13 @@ static int read_file(int file, vn_log_rec *recs, size_t max, size_t *n,
     size_t first = *n;
     int have_prev = 0, eof = 0;
 
+    if (!lf->primed && lf->saved != NULL && lf->saved[0] != '\0') {
+        const char *saved = lf->saved;
+
+        lf->saved = NULL;
+        if (!restore(lf, saved, tdf, msg, cap))
+            return prime(lf, msg, cap);
+    }
     if (!lf->primed)
         return prime(lf, msg, cap);
 
@@ -290,6 +533,7 @@ static int read_file(int file, vn_log_rec *recs, size_t max, size_t *n,
         add_msg(msg, cap, "%s is gone; reading %s from its start",
                 lf->spec, now);
         strcpy(lf->spec, now);
+        memcpy(lf->fid, f.fid, sizeof lf->fid);
         lf->at_start = 1;
         lf->have_pend = 0;
     }
@@ -301,6 +545,8 @@ static int read_file(int file, vn_log_rec *recs, size_t max, size_t *n,
         lf->primed = 0;
         add_msg(msg, cap, "lost its place in %s; starting again from "
                 "the end%s", lf->spec, "");
+        add_msg(notice, sizeof notice, "lost its place in %s: what was "
+                "written since the last read is skipped%s", lf->spec, "");
         return prime(lf, msg, cap) ? 1 : 0;
     }
 
@@ -371,6 +617,7 @@ static int read_file(int file, vn_log_rec *recs, size_t max, size_t *n,
                 add_msg(msg, cap, "%s is finished; now reading %s",
                         lf->spec, g.rsa);
                 strcpy(lf->spec, g.rsa);
+                memcpy(lf->fid, g.fid, sizeof lf->fid);
                 lf->at_start = 1;
             }
             r_close(&g);
@@ -392,8 +639,17 @@ int vn_logs_read(vn_log_rec *recs, size_t max, size_t *n, int *more,
     last_n = 0;
     if (max > AFTER_MAX)
         max = AFTER_MAX;
-    if (!vn_vms_system_tdf(&tdf, err, sizeof err))
-        tdf = 0;            /* the source refuses to start without one */
+    if (!vn_vms_system_tdf(&tdf, err, sizeof err)) {
+        /* vmsotel refuses to start without one. Here the events matter
+           more than their times: they are read as UTC, and it is said
+           once. */
+        static int said;
+
+        tdf = 0;
+        if (!said)
+            add_msg(msg, msgcap, "%s; times are taken as UTC%s", err, "");
+        said = 1;
+    }
     for (i = 0; i < 2; i++)
         if (files[i].on && !*more)
             ok &= read_file(i, recs, max, n, more, tdf, msg, msgcap);
@@ -414,6 +670,26 @@ void vn_logs_commit(size_t k)
         lf->at_start = 0;
     }
     last_n = 0;
+}
+
+int vn_logs_position(int source, char *buf, size_t cap)
+{
+    const lfile *lf = &files[source == VN_LOG_AUDIT];
+
+    buf[0] = '\0';
+    if (!lf->on || !lf->primed)
+        return 0;
+    pos_format(lf, buf, cap);
+    return 1;
+}
+
+int vn_logs_notice(char *buf, size_t cap)
+{
+    if (notice[0] == '\0')
+        return 0;
+    vn_snprintf(buf, cap, "%s", notice);
+    notice[0] = '\0';
+    return 1;
 }
 
 void vn_logs_close(void)

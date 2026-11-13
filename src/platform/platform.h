@@ -2,7 +2,7 @@
  * vmsnotify, from vmsotel's src/platform/platform.h: the platform interface.
  *
  * Everything the agent needs from the operating system beyond plain
- * C: a TCP stream, the time, and a way to wait. Nothing here names a
+ * C: a TCP stream, the time, a way to wait, and the node's name. Nothing here names a
  * sockaddr, a file descriptor or a timeval, so an implementation on
  * $QIO and $GETTIM is as possible as the POSIX one in
  * platform_posix.c. TLS sits above this interface (transport/tls.c),
@@ -54,5 +54,9 @@ vn_u64 vn_time_mono_ms(void);
 vn_u64 vn_time_precise_ns(void);
 
 void vn_sleep_ms(vn_u32 ms);
+
+/* This system's node name for the start of each title, upper case, into
+   buf: "X86VMS". 1, or 0 with buf empty if the system has none. */
+int vn_platform_node(char *buf, size_t cap);
 
 #endif

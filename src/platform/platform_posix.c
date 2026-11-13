@@ -37,6 +37,7 @@
 #  undef _SOCKADDR_LEN
 #endif
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -384,4 +385,30 @@ void vn_sleep_ms(vn_u32 ms)
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR)
         ;
 #endif
+}
+
+/*
+ * The host name up to its first dot, upper-cased: "docker-nuc.lan" is
+ * DOCKER-NUC.
+ *
+ * NOT YET FOR VMS (phase 4): there the name wanted is the SCS node name,
+ * $GETSYI SYI$_NODENAME, which is what SHOW SYSTEM and the operator log
+ * call the system; the TCP/IP host name read here can differ from it or
+ * be unset. Until then this compiles on VMS and gives the TCP/IP name.
+ */
+int vn_platform_node(char *buf, size_t cap)
+{
+    char host[256];
+    size_t i;
+
+    if (cap == 0)
+        return 0;
+    buf[0] = '\0';
+    if (gethostname(host, sizeof host - 1) != 0)
+        return 0;
+    host[sizeof host - 1] = '\0';
+    for (i = 0; host[i] != '\0' && host[i] != '.' && i + 1 < cap; i++)
+        buf[i] = (char) toupper((unsigned char) host[i]);
+    buf[i] = '\0';
+    return i > 0;
 }
