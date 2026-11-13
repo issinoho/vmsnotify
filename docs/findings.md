@@ -146,3 +146,14 @@ since that change.
 | # | Alpha | Evidence / notes |
 | --- | --- | --- |
 | B10 | One failed login is one notification, after 18e8a8b | Rebuilt on AXPBOX (`built: vmsnotify.exe vmsnotify_tls.exe`), to the real Gotify and ntfy, default rules, throttle 30. Two wrong-password SSH logins at 20:07:31 and 20:07:42: `20:07:32Z event login-failure [high] to gotify, ntfy: AXPBOX: Login failure: remote user iain from 192.168.0.131`, `20:08:02Z summary login-failure [high] …: AXPBOX: 1 more: Login failure: …`, `done: 48 cycles, 4 records, 0 ignored, 1 events, 1 throttled, 1 summaries, 2 duplicates, 2 notices; 8 sent, 0 failed attempts, 0 dropped, 0 unsent`. Read back from ntfy: the event at 20:07:33 (priority 4) and the summary at 20:08:03. So this is also the first real event at the real servers. The first submit of this job never ran (the node's SSH); the second did |
+
+## After 18e8a8b (the throttle's key and twins)
+
+| # | x86 | IA64 | Evidence / notes |
+| --- | --- | --- | --- |
+| A1 | yes | yes | Rebuilt with the change: `built: vmsnotify.exe vmsnotify_tls.exe`, no message; `--test` to the real servers: `ok    gotify (gotify): HTTP 200`, `ok    apprise (apprise): HTTP 200`, `ok    ntfy (ntfy): HTTP 200`, `ok: 0 of 3 endpoints failed` |
+| A2 | yes | yes | The reworked `probes/position_test.com`, called as `@[.probes]position_test A` from the work directory, found its own way: `created TEST.LOG: 10 records … resultant USER$ROOT:[iain.vmsnotify]TEST.LOG;1`, `saved record 8 of 10: rfa=00010000009A len=20`, `PASS save wrote TEST.STATE`. Stage A only; stage B and the batch resume not re-run |
+
+The twin rule itself is shown on the Alpha (B10), the one machine that writes twins.
+IA64's first submit of this job never ran; the second was entry 11 on SYS$BATCH, where
+the afternoon's were in the 980s, so IA64 had been restarted in between.
