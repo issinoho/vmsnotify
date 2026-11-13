@@ -172,3 +172,23 @@ Gotify (18443), the Apprise API (18444) and ntfy (18445), with a self-signed cer
 
 Refusal with the wrong certificate, and the plain image refusing https, are tested on Linux
 (`tools/agent_test.py`) and against the stand-in from VMS (the stand-in TLS run).
+
+## TLS refusals (the stand-in)
+
+`tools/fake_endpoints.py --bind 192.168.0.131 --serve 18556 … TLSDIR` on the laptop, its
+certificate (now naming `IP:192.168.0.131`) as `STANDIN.CRT`; four endpoints, one of each
+type; one batch job per machine, `VMSNOTIFY_TLS` unless said. 2026-11-13.
+
+| # | Question | x86 | IA64 | Alpha | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| T2 | Verified against the right certificate | yes | yes | yes | `ok    webhook (webhook): HTTP 200, TLSv1.3 TLS_AES_256_GCM_SHA384` and the same for the other three, `ok: 0 of 4 endpoints failed`. OpenSSL `3.0.21 9 Jun 2026` on x86, `3.0.22 25 Aug 2026` on IA64 and the Alpha |
+| T3 | A wrong certificate as cafile is refused | yes | yes | yes | `FAIL  gotify (gotify): TLS certificate: self-signed certificate` and the same for the other three, `FAILED: 4 of 4 endpoints failed`; nothing reached the stand-in |
+| T4 | Without cafile, a self-signed server is refused | yes | yes | yes | The same four refusals against the system's CAs; nothing reached the stand-in |
+| T5 | The plain image refuses https | yes | yes | yes | `not starting: endpoint gotify is https, but this image was built without TLS`, for `--test` and for a run |
+| T6 | A run delivers its notices over TLS | yes | yes | yes | `--cycles 4`: `done: 4 cycles, … 2 notices; 8 sent, 0 failed attempts, 0 dropped, 0 unsent`; x86: `endpoint gotify: TLS through OpenSSL 3.0.21 9 Jun 2026, CA USER$ROOT:[IAIN.VMSNOTIFY]STANDIN.CRT` |
+
+The stand-in logged 36 requests, all valid, 12 from each machine (one test and two notices
+per endpoint): none from the refused cases.
+
+Not tested: a certificate with the right root but the wrong address; TLS 1.2; an expired
+certificate; whether the VMS machines' system CA stores trust a public CA.
