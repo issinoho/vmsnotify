@@ -44,3 +44,18 @@ the real logs growing between save and resume (they did not, in this run).
 One thing about the machine: its batch queues run one job at a time, so a batch job that
 submits another and waits for it waits forever. The cross-job check ran as three jobs in
 turn.
+
+## The agent on VMS
+
+`build_vms.com`, as batch jobs, 2026-11-13.
+
+| # | Question | x86 | Evidence / notes |
+| --- | --- | --- | --- |
+| B1 | `build_vms` builds both images; no warnings | yes | `vmsnotify build, X86VMS, OpenVMS E9.2-4 x86_64`, `OpenSSL: SYS$LIBRARY:SSL3$LIBSSL_SHR32, SYS$LIBRARY:SSL3$LIBCRYPTO_SHR32, headers SSL3$INCLUDE`, `built: vmsnotify.exe vmsnotify_tls.exe`, no compiler or linker message, first time; no source needed changing for VSI C. `--version`: `vmsnotify 0.1.0` from both. CLEAN and a rebuild gave the same |
+| B2 | The node name from `SYI$_NODENAME` | yes | `vmsnotify 0.1.0 starting on X86VMS` |
+| B3 | The agent opens the real logs and starts at their end | yes | `build_vms DRYRUN`: `logs: starting at the end of SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;251 (954 records, 0 s); starting at the end of SYS$COMMON:[SYSMGR]SECURITY.AUDIT$JOURNAL;6 (6923 records, 1 s)` -- the record counts the position probe read (P6, P7); `done: 2 cycles, 0 records, … 2 notices; 0 sent`, exit `%X00000001` |
+
+Not yet on x86: a real record through the rules (both logs were quiet for the run's ten
+seconds); anything sent to a server; the agent resuming from a saved position (a dry run
+saves none, by design; the probe and the stub tests cover the mechanism); TLS;
+`descrip.mms`; running detached.

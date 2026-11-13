@@ -4,8 +4,9 @@ vmsnotify reads the OpenVMS operator log and security audit journal and sends wh
 matters to Gotify, an Apprise API server, ntfy or a webhook that the site runs itself.
 `docs/design.md` is the design and its decisions; read it first.
 
-**Status:** phases 1 (core) and 2 (the agent end to end on Linux) are done. Nothing of the
-agent has run on VMS yet. The read position across restarts (D8) is implemented in the
+**Status:** phases 1 (core) and 2 (the agent end to end on Linux) are done. On x86 the
+agent builds (`build_vms.com`, both images, no warnings) and dry-runs against the real logs
+(`docs/findings.md`, B1-B3); it has sent nothing from VMS yet, and IA64 and Alpha have not run. The read position across restarts (D8) is implemented in the
 fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says
 what it rests on holds there (`docs/design.md`, "The read position"); IA64 and Alpha have
 not been asked. Phase 2 was not run against the real containers on docker-nuc.

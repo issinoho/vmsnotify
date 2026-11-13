@@ -84,6 +84,8 @@ typedef socklen_t vn_socklen;
 
 #ifdef __VMS
 #  include <starlet.h>
+/* vms_sys.c: the SCS node name from $GETSYIW. */
+int vn_vms_node(char *buf, size_t cap);
 #endif
 
 #include "platform.h"
@@ -391,10 +393,10 @@ void vn_sleep_ms(vn_u32 ms)
  * The host name up to its first dot, upper-cased: "docker-nuc.lan" is
  * DOCKER-NUC.
  *
- * NOT YET FOR VMS (phase 4): there the name wanted is the SCS node name,
- * $GETSYI SYI$_NODENAME, which is what SHOW SYSTEM and the operator log
- * call the system; the TCP/IP host name read here can differ from it or
- * be unset. Until then this compiles on VMS and gives the TCP/IP name.
+ * On VMS the name wanted is the SCS node name, $GETSYI SYI$_NODENAME
+ * (vms_sys.c), which is what SHOW SYSTEM and the operator log call the
+ * system; the TCP/IP host name can differ from it or be unset. That is
+ * tried first there, and the host name is the fallback.
  */
 int vn_platform_node(char *buf, size_t cap)
 {
@@ -404,6 +406,10 @@ int vn_platform_node(char *buf, size_t cap)
     if (cap == 0)
         return 0;
     buf[0] = '\0';
+#ifdef __VMS
+    if (vn_vms_node(buf, cap))
+        return 1;
+#endif
     if (gethostname(host, sizeof host - 1) != 0)
         return 0;
     host[sizeof host - 1] = '\0';

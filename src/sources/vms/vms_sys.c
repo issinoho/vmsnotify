@@ -10,6 +10,8 @@
 
 #include <descrip.h>
 #include <lnmdef.h>
+#include <ctype.h>
+#include <syidef.h>
 #include <starlet.h>
 
 #include "vn_types.h"
@@ -21,6 +23,7 @@ typedef struct {
 } ile3;
 
 int vn_vms_system_tdf(long *tdf, char *err, size_t errcap);
+int vn_vms_node(char *buf, size_t cap);
 
 /*
  * SYS$TIMEZONE_DIFFERENTIAL from the system table, seconds east of UTC.
@@ -61,4 +64,46 @@ int vn_vms_system_tdf(long *tdf, char *err, size_t errcap)
     value[len] = '\0';
     *tdf = strtol(value, NULL, 10);
     return 1;
+}
+
+/*
+ * The SCS node name, $GETSYIW SYI$_NODENAME: what SHOW SYSTEM and the
+ * operator log call this system, and what the TCP/IP host name can
+ * differ from. platform_posix.c's vn_platform_node() calls this on VMS.
+ * Upper case, trailing blanks dropped. 1, or 0 with buf empty if the
+ * system gives none (the caller then falls back to the host name).
+ *
+ * The item list is item_list_3, so 32-bit pointers; the return length
+ * is a word here, as item_list_3 declares (it is $GETRMI that writes a
+ * longword). The status is the call's and the I/O status block's both.
+ */
+int vn_vms_node(char *buf, size_t cap)
+{
+    char name[32];
+    unsigned short len = 0;
+    unsigned short iosb[4];
+    ile3 ile[2];
+    unsigned int st;
+    size_t i;
+
+    if (cap == 0)
+        return 0;
+    buf[0] = '\0';
+    memset(ile, 0, sizeof ile);
+    memset(iosb, 0, sizeof iosb);
+    ile[0].len = (unsigned short) (sizeof name - 1);
+    ile[0].code = SYI$_NODENAME;
+    ile[0].buf = name;
+    ile[0].retlen = &len;
+    st = sys$getsyiw(0, 0, 0, (void *) ile, (void *) iosb, 0, 0);
+    if (!(st & 1) || !(iosb[0] & 1))
+        return 0;
+    if (len > sizeof name - 1)
+        len = (unsigned short) (sizeof name - 1);
+    while (len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\0'))
+        len--;
+    for (i = 0; i < len && i + 1 < cap; i++)
+        buf[i] = (char) toupper((unsigned char) name[i]);
+    buf[i] = '\0';
+    return i > 0;
 }

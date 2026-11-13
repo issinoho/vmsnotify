@@ -7,6 +7,8 @@
 #                   the golden payloads through tools/fake_endpoints.py's
 #                   validators; then the agent end to end against
 #                   tools/fake_endpoints.py (tools/agent_test.py)
+#   make check also runs tools/check_build_files.py: Makefile, build_vms.com and
+#                   descrip.mms must list the same sources and flags
 #   make golden     rewrite tests/golden/ from the encoders; read the diff
 #                   before committing it
 #
@@ -122,6 +124,7 @@ check: all
 	$(B)/test_endpoint tests/golden
 	$(B)/test_config vmsnotify.conf.example
 	$(B)/test_http
+	$(PYTHON) -I tools/check_build_files.py Makefile build_vms.com descrip.mms
 	$(PYTHON) -I tools/fake_endpoints.py --validate tests/golden/*.txt
 	$(B)/vmsnotify --version | grep -qx 'vmsnotify 0.1.0'
 	! grep -n 'snprintf' src/agent/*.c src/transport/*.c src/sources/*/*.c src/platform/*.c | grep -v 'vn_v*snprintf'
