@@ -142,3 +142,7 @@ The probe's driver procedures (`probes/position_test.com`, `position_batch.com`)
 `USER$ROOT:[IAIN.VMSNOTIFY]` and were edited on the way up for the Alpha. They now take the
 work directory from their own location (the directory above `probes/`); not yet run on VMS
 since that change.
+
+| # | Alpha | Evidence / notes |
+| --- | --- | --- |
+| B10 | One failed login is one notification, after 18e8a8b | Rebuilt on AXPBOX (`built: vmsnotify.exe vmsnotify_tls.exe`), to the real Gotify and ntfy, default rules, throttle 30. Two wrong-password SSH logins at 20:07:31 and 20:07:42: `20:07:32Z event login-failure [high] to gotify, ntfy: AXPBOX: Login failure: remote user iain from 192.168.0.131`, `20:08:02Z summary login-failure [high] …: AXPBOX: 1 more: Login failure: …`, `done: 48 cycles, 4 records, 0 ignored, 1 events, 1 throttled, 1 summaries, 2 duplicates, 2 notices; 8 sent, 0 failed attempts, 0 dropped, 0 unsent`. Read back from ntfy: the event at 20:07:33 (priority 4) and the summary at 20:08:03. So this is also the first real event at the real servers. The first submit of this job never ran (the node's SSH); the second did |
