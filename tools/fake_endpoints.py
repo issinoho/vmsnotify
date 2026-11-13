@@ -179,12 +179,16 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(status, reply)
 
 
-def make_cert(d, name="server"):
-    """A self-signed certificate for 127.0.0.1 in d: NAME.crt and NAME.key."""
+def make_cert(d, name="server", bind="127.0.0.1"):
+    """A self-signed certificate in d: NAME.crt and NAME.key. Its subjectAltName
+    is IP:127.0.0.1, and the --bind address too when that is a real one."""
+    san = "IP:127.0.0.1"
+    if bind not in ("127.0.0.1", "0.0.0.0", "", "::"):
+        san += ",IP:" + bind
     subprocess.run(
         ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
          "-days", "1", "-subj", "/CN=fake-endpoints",
-         "-addext", "subjectAltName=IP:127.0.0.1",
+         "-addext", "subjectAltName=" + san,
          "-keyout", os.path.join(d, name + ".key"),
          "-out", os.path.join(d, name + ".crt")],
         check=True, capture_output=True)
@@ -220,7 +224,7 @@ def main(argv):
     if len(argv) in (4, 5) and argv[1] == "--serve":
         Handler.log_path = argv[3]
         if len(argv) == 5:
-            print("CA certificate for cafile:", make_cert(argv[4]))
+            print("CA certificate for cafile:", make_cert(argv[4], bind=bind))
         start(int(argv[2]), argv[4] if len(argv) == 5 else None, bind)
         try:
             while True:
