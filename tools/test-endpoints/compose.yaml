@@ -20,9 +20,11 @@ services:
     volumes:
       - gotify-data:/app/data
     environment:
-      # Change this. It sets the admin password when the data volume is
-      # first created; changing it later has no effect on an existing volume.
-      GOTIFY_DEFAULTUSER_PASS: changeme
+      # The admin password, from GOTIFY_ADMIN_PASSWORD in a .env file next
+      # to this one (git-ignored: `echo GOTIFY_ADMIN_PASSWORD=... > .env`).
+      # It is used only when the data volume is first created; changing it
+      # later has no effect on an existing volume.
+      GOTIFY_DEFAULTUSER_PASS: ${GOTIFY_ADMIN_PASSWORD:-changeme}
 
   apprise:
     image: caronc/apprise:2.1.0

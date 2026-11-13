@@ -3,12 +3,18 @@
 Three throwaway notification servers on docker-nuc (192.168.0.218) for
 testing vmsnotify. LAN-only test servers, not for production.
 
-Start them from this directory: `docker compose up -d`
+Set Gotify's admin password in a `.env` file here (git-ignored), then start
+them from this directory:
+
+```sh
+echo 'GOTIFY_ADMIN_PASSWORD=choose-one' > .env
+docker compose up -d
+```
 
 ## Gotify (port 18080)
 
 1. Open http://192.168.0.218:18080 and log in as `admin` with the
-   password set in `compose.yaml` (`changeme` unless you changed it).
+   password from `.env` (`changeme` if there is none).
 2. Create an application called `vmsnotify test`.
 3. Copy its token to VMS as `VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN`.
 
