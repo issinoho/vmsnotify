@@ -3,7 +3,7 @@
 
     fake_endpoints.py --validate FILE...   check golden payloads (tests/golden)
                                            as each server would read them
-    fake_endpoints.py --serve PORT LOG [TLSDIR]
+    fake_endpoints.py [--bind ADDR] --serve PORT LOG [TLSDIR]
                                            answer all four APIs on 127.0.0.1:PORT,
                                            appending each request to LOG as JSON
                                            (one line each); with TLSDIR, over TLS
@@ -198,9 +198,9 @@ class Server(ThreadingHTTPServer):
         pass                    # a refused TLS handshake is the client's news
 
 
-def start(port=0, tls_dir=None):
+def start(port=0, tls_dir=None, bind="127.0.0.1"):
     """Starts a server in a thread; returns it and its port."""
-    srv = Server(("127.0.0.1", port), Handler)
+    srv = Server((bind, port), Handler)
     if tls_dir:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(os.path.join(tls_dir, "server.crt"),
@@ -211,13 +211,17 @@ def start(port=0, tls_dir=None):
 
 
 def main(argv):
+    bind = "127.0.0.1"
+    if len(argv) >= 3 and argv[1] == "--bind":
+        bind = argv[2]
+        argv = argv[:1] + argv[3:]
     if len(argv) >= 2 and argv[1] == "--validate":
         return validate_golden(argv[2:])
     if len(argv) in (4, 5) and argv[1] == "--serve":
         Handler.log_path = argv[3]
         if len(argv) == 5:
             print("CA certificate for cafile:", make_cert(argv[4]))
-        start(int(argv[2]), argv[4] if len(argv) == 5 else None)
+        start(int(argv[2]), argv[4] if len(argv) == 5 else None, bind)
         try:
             while True:
                 time.sleep(3600)
