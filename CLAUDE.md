@@ -12,8 +12,10 @@ failures and a break-in within seconds (B4-B8). IA64 gives the same, with no sou
 (findings, "IA64"). So does the Alpha, where one failed SSH login
 makes two audit records, so two notifications (findings, "Alpha"). `--test` reaches the
 real Gotify, Apprise API and ntfy from all three (R1). Verified TLS from all three, to the
-real servers and the stand-in, with refusals (T1-T6). Not yet: an operator-log record,
-running detached, the kit.
+real servers and the stand-in, with refusals (T1-T6). A plain REQUEST arrives as an
+operator message, sent by the `opcom-message` default (O1-O5; x86 only so far). An hour
+detached on all three, with `VMSNOTIFY_START`/`_RUN`/`_STOP` in the source tree, delivered
+live login failures and stopped cleanly (D1-D4). Not yet: the kit.
 Induced login failures count towards VMS's break-in evasion: six from one source in a few
 minutes made an INTRUDER record on x86. Keep to three, and say so first. The read position across restarts (D8) is implemented in the
 fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says

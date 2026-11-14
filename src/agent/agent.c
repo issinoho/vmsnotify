@@ -333,8 +333,10 @@ static void load_positions(agent *a)
 /*
  * Writes the committed positions if they have moved. On Linux the file
  * is replaced whole, by rename, so a crash leaves the old one or the new
- * one. On VMS a new version is written (rename there does not replace);
- * phase 4 gives the file a version limit.
+ * one. On VMS a new version is written (rename there does not replace),
+ * and once it is closed the version before it is deleted, so versions
+ * do not pile up and a crash leaves at least one whole one (findings D4:
+ * without this the hour's runs left a version per save).
  *
  * A log that has no position now -- it could not be read -- keeps the
  * one the last run left, to be tried again at the next start.
@@ -380,6 +382,12 @@ static void save_positions(agent *a)
         a->pos_failed = 1;
         return;
     }
+#ifdef __VMS
+    if (strchr(a->pos_path, ';') == NULL) {
+        vn_snprintf(tmp, sizeof tmp, "%s;-1", a->pos_path);
+        (void)remove(tmp);          /* none on the first save: harmless */
+    }
+#endif
     if (a->pos_failed)
         say("read position written to %s again", a->pos_path);
     a->pos_failed = 0;

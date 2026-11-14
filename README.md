@@ -65,6 +65,18 @@ build/vmsnotify my.conf                      # run (on Linux the logs are made u
 `build/vmsnotify_tls` is the same with https. `tools/fake_endpoints.py --serve PORT LOG`
 answers as all four servers would, for trying a configuration without them.
 
+## Running detached on OpenVMS (source tree)
+
+After `@build_vms`, make `VMSNOTIFY.CONF` beside the procedures (from `vmsnotify.conf.example`), then:
+
+```
+@dev:[dir.VMSNOTIFY]VMSNOTIFY_START     RUN/DETACHED as you, privileges NETMBX, TMPMBX, READALL
+TYPE dev:[dir.VMSNOTIFY]VMSNOTIFY.LOG    the agent's log; VMSNOTIFY_RUN.LOG is DCL's
+@dev:[dir.VMSNOTIFY]VMSNOTIFY_STOP      creates VMSNOTIFY.STOP and waits for the process to end
+```
+
+The kit's layout (`[CONF]`, `[LOG]`, `[DATA]`, started as its own account) will come with the kit.
+
 ## Licence
 
 MIT; see [LICENSE](LICENSE). Parts come from [vmsotel](https://github.com/issinoho/vmsotel),

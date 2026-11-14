@@ -215,3 +215,29 @@ The live delay from OPERATOR.LOG to a notification was not measured: the first r
 did not start (a mistake in the test procedure), so each was resumed from an earlier saved
 position afterwards. A numbered request (`REQUEST/REPLY`) was not tried: it waits for a
 REPLY.
+
+## Running detached
+
+`VMSNOTIFY_START.COM` (`RUN/DETACHED SYS$SYSTEM:LOGINOUT`, process VMSNOTIFY, privileges
+`NOSAME,NETMBX,TMPMBX,READALL`), `VMSNOTIFY_RUN.COM` and `VMSNOTIFY_STOP.COM`, source-tree
+layout, as IAIN. `VMSNOTIFY.CONF` was the T1 configuration (the real Gotify, Apprise API and
+ntfy over verified TLS) with `interval = 10`. x86 ran 10 minutes alone (00:46–00:56 UTC,
+2026-11-14), then all three ran an hour together (00:57–01:58). At 01:07:00 two
+wrong-password SSH logins as IAIN were made to each machine, 10 s apart.
+
+| # | Question | x86 | IA64 | Alpha | Evidence / notes |
+| --- | --- | --- | --- | --- | --- |
+| D1 | It runs detached with exactly NETMBX, TMPMBX and READALL | yes | yes | yes | `VMSNOTIFY_RUN.LOG`, `SHOW PROCESS/PRIVILEGES`: authorized and process privileges NETMBX, READALL, TMPMBX. Start line `vmsnotify 0.1.0 starting on X86VMS: every 10 s, 9 rules, queue 32`, then `notice [low] to gotify, apprise, ntfy: X86VMS: vmsnotify started` |
+| D2 | Live login failures in a detached run, throttled | yes | yes | yes | `01:07:09Z event login-failure [high] … X86VMS: Login failure: remote user IAIN from 192.168.0.131 on FTA9535:`, `01:12:09Z summary … 1 more`; IA64 01:07:07 and 01:12:07, on FTA107; Alpha 01:07:09 and 01:12:09, `remote user iain`, no terminal. ntfy received exactly 12 messages from the three: 3 started, 3 login failures and 3 summaries at priority 4, 3 stopped |
+| D3 | `VMSNOTIFY_STOP` stops it cleanly | yes | yes | yes | `vmsnotify: acknowledged; waiting for it to finish sending`, then `vmsnotify_run: agent exited, status %X00000001`. x86 `stopped: 366 cycles, 3 records, 1 ignored, 1 events, 1 throttled, 1 summaries, 0 duplicates, 2 notices; 12 sent, 0 failed attempts, 0 dropped, 0 unsent`; IA64 the same; Alpha `367 cycles, 5 records … 2 duplicates`, the rest the same (its two records per failed login, B10) |
+| D4 | The position file stays small | **no**, fixed | no | no | Each save wrote a new version (rename does not replace on VMS): `VMSNOTIFY.POS` reached 4 versions in the hour. The agent now deletes the version before each one it writes. x86, two runs against a deliberately stale file: `;1` → `;2` written, `;1` gone; then (stale `;3` written by hand) `;4` written, `;3` gone |
+
+CPU for the hour: x86 25.33 s, IA64 0.70 s, Alpha 8.47 s; connect time 1:01 on each. x86's
+rose evenly (about 5 s at 10 minutes); why it costs so much more there (a QEMU guest) was
+not looked into.
+
+`SHOW INTRUSION` at the stop, 50 minutes after the logins, found no records on any machine;
+whether the two failures made SUSPECT entries that had since expired was not checked.
+
+Not tested: the kit's layout and account, a start from SYSTARTUP, a run longer than an
+hour, and D4's fix on IA64 and the Alpha.
