@@ -3,10 +3,8 @@ $!
 $! Not run by hand: VMSNOTIFY_START.COM gives it to LOGINOUT. It runs
 $! the agent with its configuration, log, stop file and position file,
 $! and exits when the agent does. They are found as VMSNOTIFY_START
-$! finds them: beside this file, in the source tree.
-$!
-$! TODO(kit): the kit's layout ([CONF], [LOG], [DATA], [BIN]) goes where
-$! the paths are set below, as in vmsotel_run.com.
+$! finds them: beside this file in the source tree, or in the kit's [CONF],
+$! [LOG] and [DATA] (the layout is copied from vmsotel_run.com).
 $!
 $! The privileges are NETMBX, TMPMBX and READALL, given by
 $! VMSNOTIFY_START; this shows them first, so that VMSNOTIFY_RUN.LOG
@@ -20,13 +18,28 @@ $ proc = f$environment("PROCEDURE")
 $ dev = f$parse(proc,,,"DEVICE")
 $ dir = f$parse(proc,,,"DIRECTORY")
 $ root = dev + dir
-$ conf = root + "VMSNOTIFY.CONF"
-$ logd = root
-$ bin  = dev + f$extract(0, f$length(dir) - 1, dir) + ".BUILD]"
-$ com  = root
+$ pdir = f$parse(proc,,,"DIRECTORY","NO_CONCEAL") - "][" - "><"
+$ top = f$parse(proc,,,"DEVICE","NO_CONCEAL") + -
+        f$extract(0, f$length(pdir) - 5, pdir)
+$ kit = f$extract(f$length(pdir) - 5, 5, pdir) .eqs. ".COM]" .and. -
+        f$search(top + ".BIN]VMSNOTIFY_LAUNCH.EXE") .nes. ""
+$ if kit
+$ then
+$     conf = top + ".CONF]VMSNOTIFY.CONF"
+$     logd = top + ".LOG]"
+$     datad = top + ".DATA]"
+$     bin  = top + ".BIN]"
+$ else
+$     conf = root + "VMSNOTIFY.CONF"
+$     logd = root
+$     datad = root
+$     bin  = dev + f$extract(0, f$length(dir) - 1, dir) + ".BUILD]"
+$ endif
 $! Relative names in the configuration (token_file, cafile) are looked
-$! for in the default directory.
-$ set default 'logd'
+$! for in the default directory: the source tree's, and in the kit [CONF],
+$! where the tokens and certificates are kept.
+$ if kit then set default 'top'.CONF]
+$ if .not. kit then set default 'logd'
 $!
 $ set process/privileges=(noall,netmbx,tmpmbx,readall)
 $ missing = ""
@@ -38,6 +51,7 @@ $ then
 $     write sys$output f$time(), " vmsnotify_run: needs", missing, -
           ", which ", f$edit(f$getjpi("", "USERNAME"), "TRIM"), -
           " is not authorized; what needs it will not work."
+$     if kit then write sys$output "  Run @VMSNOTIFY$ROOT:[COM]VMSNOTIFY$CONFIGURE again, as SYSTEM."
 $ endif
 $!
 $ exe = bin + "VMSNOTIFY_TLS.EXE"
@@ -51,7 +65,7 @@ $ vmsnotify := $'exe'
 $ vmsnotify "''conf'" -
           "--log" "''logd'VMSNOTIFY.LOG" -
           "--stop-file" "''logd'VMSNOTIFY.STOP" -
-          "--position" "''logd'VMSNOTIFY.POS"
+          "--position" "''datad'VMSNOTIFY.POS"
 $ st = $status
 $ write sys$output f$time(), " vmsnotify_run: agent exited, status ", st
 $ show process/accounting

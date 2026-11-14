@@ -1,7 +1,8 @@
 ! descrip.mms : MMS description file for the vmsnotify agent
 !
 ! Usage, from the vmsnotify directory:
-!     $ MMS                build VMSNOTIFY.EXE and VMSNOTIFY_TLS.EXE
+!     $ MMS                build VMSNOTIFY.EXE, VMSNOTIFY_TLS.EXE and
+!                         VMSNOTIFY_LAUNCH.EXE
 !     $ MMS CLEAN          remove the agent's objects and images
 !
 ! Type the target in capitals. With SET PROCESS/PARSE_STYLE=EXTENDED,
@@ -35,7 +36,8 @@ SSL_EXPECT = VN_EXPECT_OPENSSL_3
 ! On Alpha add /FLOAT=IEEE_FLOAT: MMS/MACRO=FLOAT="/FLOAT=IEEE_FLOAT"
 
 FLOAT =
-IMAGES = [.build]vmsnotify.exe, [.build]vmsnotify_tls.exe
+IMAGES = [.build]vmsnotify.exe, [.build]vmsnotify_tls.exe,-
+[.build]vmsnotify_launch.exe
 
 INCLUDES = /INCLUDE_DIRECTORY=([.src.model],[.src.notify],[.src.platform],-
 [.src.transport],[.src.sources],[.src.agent])
@@ -134,6 +136,12 @@ ALL : $(IMAGES)
     $(CC)$(CFLAGS)/POINTER_SIZE=32/DEFINE=(VN_WITH_TLS,$(SSL_EXPECT))-
 /OBJECT=$(MMS$TARGET) [.src.transport]tls.c
 
+! The kit's launcher (copied from vmsotel's): persona services, $CREPRC,
+! and OpenSSL's generator, so the pointer size of the ..._SHR32 images.
+
+[.build]launch.obj : [.src.launch]launch.c
+    $(CC)$(CFLAGS)/POINTER_SIZE=32/OBJECT=$(MMS$TARGET) [.src.launch]launch.c
+
 ! ==== linker options ====
 
 $(OPT) :
@@ -159,6 +167,10 @@ $(CORE_OBJS)
 [.build]http_tls.obj,[.build]tls.obj,$(CORE_OBJS),$(OPT)/OPTIONS
     @ IF $SEVERITY .NE. 1 THEN EXIT %X10000002
 
+[.build]vmsnotify_launch.exe : [.build]launch.obj, $(OPT)
+    $(LINK)/EXECUTABLE=$(MMS$TARGET) [.build]launch.obj,$(OPT)/OPTIONS
+    @ IF $SEVERITY .NE. 1 THEN EXIT %X10000002
+
 ! ==== housekeeping ====
 !
 ! The agent's products only; the probes' objects and images in [.build]
@@ -181,4 +193,5 @@ CLEAN :
     @- IF F$SEARCH("[.build]platform_posix.obj") .NES. "" THEN DELETE/NOCONFIRM [.build]platform_posix.obj;*
     @- IF F$SEARCH("[.build]http*.obj") .NES. "" THEN DELETE/NOCONFIRM [.build]http*.obj;*
     @- IF F$SEARCH("[.build]agent*.obj") .NES. "" THEN DELETE/NOCONFIRM [.build]agent*.obj;*
+    @- IF F$SEARCH("[.build]launch.obj") .NES. "" THEN DELETE/NOCONFIRM [.build]launch.obj;*
     @- IF F$SEARCH("[.build]tls.obj") .NES. "" THEN DELETE/NOCONFIRM [.build]tls.obj;*

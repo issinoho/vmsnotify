@@ -40,7 +40,8 @@ TESTS = $(B)/test_types $(B)/test_logs $(B)/test_rules $(B)/test_endpoint \
 
 # What every agent links besides its log source and its HTTP.
 AGENT_OBJ = $(CORE_OBJ) $(B)/queue.o $(B)/platform_posix.o
-AGENTS = $(B)/vmsnotify $(B)/vmsnotify_tls $(B)/vmsnotify_vmsstub
+AGENTS = $(B)/vmsnotify $(B)/vmsnotify_tls $(B)/vmsnotify_vmsstub \
+         $(B)/vmsnotify_launch_vmsstub
 
 all: $(TESTS) $(AGENTS)
 
@@ -98,6 +99,14 @@ $(B)/vmsnotify_tls: $(B)/agent_tls.o $(B)/http_tls.o $(B)/tls.o $(B)/fake_logs.o
 $(B)/vmsnotify_vmsstub: $(B)/agent.o $(B)/http.o $(B)/vms_logs.o $(B)/vms_sys.o $(B)/vmsstub.o $(AGENT_OBJ)
 	$(CC) -o $@ $^
 
+# The kit's launcher (src/launch), copied from vmsotel: VMS system
+# services, so against the stub, which knows one account, VMSNOTIFY, and
+# prints the process it is asked to create. OpenSSL for --password.
+$(B)/launch.o: src/launch/launch.c stub/*.h | $(B)
+	$(CC) $(VMSISH) -c -o $@ $<
+$(B)/vmsnotify_launch_vmsstub: $(B)/launch.o $(B)/vmsstub.o
+	$(CC) -o $@ $^ -lcrypto
+
 # The test compares the formatter with glibc's snprintf, whose output gcc
 # thinks may be truncated; it is the point of the test.
 $(B)/test_types: tests/test_types.c $(B)/vn_types.o
@@ -125,6 +134,19 @@ check: all
 	$(B)/test_config vmsnotify.conf.example
 	$(B)/test_http
 	$(PYTHON) -I tools/check_build_files.py Makefile build_vms.com descrip.mms
+	$(PYTHON) -I tools/check_kit.py
+	$(B)/vmsnotify_launch_vmsstub VMSNOTIFY DKA0:[X.COM]R.COM DKA0:[X.LOG]R.LOG vmsnotify > $(B)/launch.out
+	grep -q 'as persona 7, input DKA0:\[X.COM\]R.COM, output DKA0:\[X.LOG\]R.LOG, error DKA0:\[X.LOG\]R.LOG, name VMSNOTIFY, priority 4, flags 0x200, quotas 1=100 3=200000 12=500 6=100 2=100 5=100 7=300000 9=20 10=4096 11=16384 13=32768$$' $(B)/launch.out
+	grep -q '^vmsnotify_launch: process 02001234 started as VMSNOTIFY$$' $(B)/launch.out
+	! $(B)/vmsnotify_launch_vmsstub vmsnotify_x a.com a.log vmsnotify > $(B)/launch.out
+	grep -q 'cannot take on the account VMSNOTIFY_X' $(B)/launch.out
+	! STUB_CREPRC_FAIL=1 $(B)/vmsnotify_launch_vmsstub vmsnotify a.com a.log vmsnotify > $(B)/launch.out
+	grep -q 'cannot create the process as VMSNOTIFY' $(B)/launch.out
+	! $(B)/vmsnotify_launch_vmsstub vmsnotify a.com a.log process_name_too_long > /dev/null
+	$(B)/vmsnotify_launch_vmsstub --password > $(B)/launch.out
+	$(B)/vmsnotify_launch_vmsstub --password >> $(B)/launch.out
+	test "$$(grep -cxE '[A-Z0-9]{32}' $(B)/launch.out)" = 2
+	test "$$(sort -u $(B)/launch.out | wc -l)" = 2
 	$(PYTHON) -I tools/fake_endpoints.py --validate tests/golden/*.txt
 	$(B)/vmsnotify --version | grep -qx 'vmsnotify 0.1.0'
 	! grep -n 'snprintf' src/agent/*.c src/transport/*.c src/sources/*/*.c src/platform/*.c | grep -v 'vn_v*snprintf'

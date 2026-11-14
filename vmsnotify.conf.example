@@ -1,4 +1,8 @@
-# vmsnotify configuration: VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF
+# vmsnotify configuration: VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF (installed from
+# the kit; VMSNOTIFY$CONFIGURE makes it from VMSNOTIFY.CONF_EXAMPLE, this file).
+# In the kit the tokens are files in [CONF], owned by the agent's account with
+# protection (S:RWED,O:RWED,G,W), and the read position is kept in
+# VMSNOTIFY$ROOT:[DATA]VMSNOTIFY.POS.
 #
 # vmsnotify reads the operator log (OPCOM) and the security audit journal
 # and sends what matters to notification servers you run yourself:

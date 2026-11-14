@@ -281,8 +281,10 @@ static int read_token(const char *path, char *out, size_t cap,
 }
 
 /* path with its file type replaced by .pos: next to the configuration,
-   on Linux and on VMS ([CONF]VMSNOTIFY.CONF gives [CONF]VMSNOTIFY.pos;
-   phase 4 will pass --position for [DATA]). */
+   on Linux and when no --position is given. VMSNOTIFY_RUN.COM always
+   passes --position, so the position is VMSNOTIFY.POS beside the
+   procedures in the source tree and VMSNOTIFY$ROOT:[DATA]VMSNOTIFY.POS
+   in the kit, never in [CONF]. */
 static void default_pos_path(const char *config, char *out, size_t cap)
 {
     size_t n = strlen(config), i, dot = n;

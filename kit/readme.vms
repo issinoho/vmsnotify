@@ -1,0 +1,109 @@
+vmsnotify @VERSION@ for OpenVMS (@ARCH@)
+======================================
+
+(Adapted from vmsotel's kit/readme.vms, issinoho/vmsotel, MIT, same author.)
+
+A notification agent: it reads this system's operator log (OPERATOR.LOG)
+and security audit journal and sends what matters -- login failures,
+break-in attempts, operator messages, whatever the rules in
+VMSNOTIFY.CONF select -- to a Gotify server, an Apprise API server, ntfy
+or a webhook that you run yourself. It connects out to them; nothing
+listens on this system. It runs as its own account, never as SYSTEM,
+with NETMBX, TMPMBX and READALL, and no more.
+
+Requires: OpenVMS x86-64 (tested on E9.2-4), Integrity (tested on
+V8.4-2L3) or Alpha (tested on V8.4-2L2), VSI TCP/IP Services, and VSI's
+SSL3 kit. There is no VAX kit.
+
+Setting up (as SYSTEM)
+----------------------
+1. Create the agent's account, set the protections, and create the
+   configuration, once:
+
+     $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY$CONFIGURE
+
+   It asks for the account (default VMSNOTIFY) and, for a new account,
+   its UIC: choose a group of its own, above MAXSYSGROUP (e.g. [360,1]).
+   The account cannot log in by any route; the agent still runs as it.
+   Its authorized privileges are NETMBX, TMPMBX and READALL. It changes
+   only an account it created.
+
+2. Edit VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF (made from
+   VMSNOTIFY.CONF_EXAMPLE, which explains every setting): one
+   [endpoint NAME] section per server, and the rules. Keep each token
+   in a file of its own in [CONF] and name it, rather than writing it in
+   the configuration:
+
+     [endpoint home]
+     type = gotify
+     url = https://gotify.example.org
+     token_file = VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
+
+   [CONF], [DATA] and [LOG] belong to the account and nobody else can
+   read them. A file you add to [CONF] must be the account's, with no
+   group or world access:
+
+     $ SET FILE/OWNER=VMSNOTIFY VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
+     $ SET FILE/PROTECTION=(S:RWED,O:RWED,G,W) VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
+
+   For https the server's certificate is always verified, against the
+   system's authorities or the file named by cafile (put that in [CONF]
+   too); there is no setting to skip it.
+
+   Check what it would send, without contacting anything, and send one
+   test notice to every endpoint:
+
+     $ VMSNOTIFY := $VMSNOTIFY$ROOT:[BIN]VMSNOTIFY_TLS.EXE
+     $ VMSNOTIFY "VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF" "--dry-run" "--cycles" "2"
+     $ VMSNOTIFY "VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF" "--test"
+
+   (Quoted, because DCL lowercases what is not. SYSTEM can read the
+   account's files, so this shows the configuration as the agent will
+   read it; neither writes the read position.)
+
+3. Start it:
+
+     $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY_START
+
+   and stop it, letting it send what it has queued:
+
+     $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY_STOP
+
+   Both need IMPERSONATE and WORLD (SYSTEM has them).
+
+4. At boot and shutdown, add to SYS$MANAGER:SYSTARTUP_VMS.COM (after
+   TCP/IP) and SYS$MANAGER:SYSHUTDWN.COM:
+
+     $ @SYS$STARTUP:VMSNOTIFY$STARTUP.COM
+     $ @SYS$STARTUP:VMSNOTIFY$SHUTDOWN.COM
+
+   VMSNOTIFY$STARTUP starts the agent if VMSNOTIFY$CONFIGURE was told to
+   (SYS$MANAGER:VMSNOTIFY$CONFIG.COM).
+
+Files
+-----
+  VMSNOTIFY$ROOT:[BIN]   VMSNOTIFY_TLS.EXE (used when present: it also
+                         speaks plain HTTP), VMSNOTIFY.EXE,
+                         VMSNOTIFY_LAUNCH.EXE (starts the agent as its
+                         account)
+  VMSNOTIFY$ROOT:[COM]   VMSNOTIFY_START, _STOP, _RUN, VMSNOTIFY$CONFIGURE
+  VMSNOTIFY$ROOT:[CONF]  VMSNOTIFY.CONF, VMSNOTIFY.CONF_EXAMPLE, the
+                         token files and certificates
+  VMSNOTIFY$ROOT:[DATA]  VMSNOTIFY.POS (how far each log has been read,
+                         kept across restarts)
+  VMSNOTIFY$ROOT:[LOG]   VMSNOTIFY.LOG (the agent's, one line per event),
+                         VMSNOTIFY_RUN.LOG (DCL's, five versions kept)
+  VMSNOTIFY$ROOT:[DOC]   this file, OPERATIONS.MD, LICENSE.
+  SYS$MANAGER:VMSNOTIFY$CONFIG.COM   the account, and whether to start
+                         at boot
+
+PRODUCT REMOVE VMSNOTIFY stops the agent and deassigns VMSNOTIFY$ROOT and
+VMSNOTIFY$USER. VMSNOTIFY.CONF, the tokens, the read position, the logs,
+the site settings and the account are kept, so a reinstall carries on
+where it left off.
+
+When it does not start, VMSNOTIFY$ROOT:[LOG]VMSNOTIFY_RUN.LOG says why;
+when it does not send, VMSNOTIFY.LOG does. The source and the full
+documentation are at https://github.com/issinoho/vmsnotify.
+
+vmsnotify is distributed under the MIT licence; see LICENSE.

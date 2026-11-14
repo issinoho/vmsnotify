@@ -75,7 +75,19 @@ TYPE dev:[dir.VMSNOTIFY]VMSNOTIFY.LOG    the agent's log; VMSNOTIFY_RUN.LOG is D
 @dev:[dir.VMSNOTIFY]VMSNOTIFY_STOP      creates VMSNOTIFY.STOP and waits for the process to end
 ```
 
-The kit's layout (`[CONF]`, `[LOG]`, `[DATA]`, started as its own account) will come with the kit.
+## The PCSI kit
+
+`@[.vmsnotify.kit]MAKE_KIT`, after `build_vms`, writes
+`ISSINOHO-<base>-VMSNOTIFY-V0.1-0.PCSI` into `[.KIT_<arch>]` for X86VMS, I64VMS or AXPVMS
+(each needs VSI's SSL3 kit; there is no VAX kit). Installed, the agent runs as its own
+account, not SYSTEM, started by persona (`VMSNOTIFY_LAUNCH.EXE`), with NETMBX, TMPMBX and
+READALL only. The tree is `VMSNOTIFY$ROOT:` with `[BIN]`, `[COM]`, `[DOC]` and, owned by the
+account with no group or world access, `[CONF]` (configuration and token files), `[DATA]`
+(the read position) and `[LOG]`. `VMSNOTIFY$CONFIGURE` makes the account and the protections;
+`VMSNOTIFY$STARTUP` and `$SHUTDOWN` go in `SYSTARTUP_VMS.COM` and `SYSHUTDWN.COM`.
+`VMSNOTIFY_START`, `_RUN` and `_STOP` serve both layouts. `docs/operations.md` has the
+steps; `tools/check_kit.py`, in `make check`, fails if the product description and
+`kit/make_kit.com` drift. The kit has been packaged on x86; it has not yet been installed.
 
 ## Licence
 

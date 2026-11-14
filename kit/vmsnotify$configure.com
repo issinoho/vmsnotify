@@ -1,0 +1,271 @@
+$! VMSNOTIFY$CONFIGURE.COM -- set up the vmsnotify agent (once, as SYSTEM; safe
+$! to run again)
+$!
+$! Adapted from vmsotel's kit/vmsotel$configure.com (issinoho/vmsotel, MIT,
+$! same author). The privileges are fixed here: NETMBX, TMPMBX, READALL.
+$!
+$!   @VMSNOTIFY$ROOT:[COM]VMSNOTIFY$CONFIGURE [account] [uic] [autostart]
+$!     account    the agent's account (default VMSNOTIFY)
+$!     uic        its UIC, e.g. [360,1]: a group of its own, above
+$!                MAXSYSGROUP. Needed only when the account is new.
+$!     autostart  YES: VMSNOTIFY$STARTUP starts the agent at boot (default)
+$!   Missing values are asked for when run interactively.
+$!
+$! What it does (docs/design.md, "The installation kit"):
+$!  - VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF from VMSNOTIFY.CONF_EXAMPLE, if there
+$!    is none.
+$!  - The account. A new one gets no login class at all (local, dial-up,
+$!    remote, network, batch) but is not disusered, since a persona
+$!    refuses that; LGICMD NL:, DISCTLY, LOCKPWD, a random password
+$!    nobody needs, and the quotas the agent runs with. An existing
+$!    account is changed only if this procedure created it (its owner
+$!    field says "vmsnotify agent"). A system-group UIC is refused.
+$!  - Its authorized privileges: NETMBX, TMPMBX and READALL, always
+$!    (the sockets; the operator log and the audit journal). Never WORLD.
+$!  - The tree: [CONF], [DATA] and [LOG] belong to the account and no
+$!    one else can read them (the tokens are kept in [CONF]); [BIN],
+$!    [COM] and [DOC] are readable by all, as LOGINOUT needs every
+$!    directory on the way to be.
+$!  - SYS$MANAGER:VMSNOTIFY$CONFIG.COM (the account; start at boot or
+$!    not), and the system logical VMSNOTIFY$USER.
+$!
+$ set noon
+$ set process/parse_style=extended
+$ say = "write sys$output"
+$ interactive = f$mode() .eqs. "INTERACTIVE"
+$ if f$trnlnm("VMSNOTIFY$ROOT", "LNM$SYSTEM_TABLE") .eqs. ""
+$ then
+$     say "VMSNOTIFY$CONFIGURE: VMSNOTIFY$ROOT is not defined (@SYS$STARTUP:VMSNOTIFY$STARTUP INSTALL)"
+$     exit 44
+$ endif
+$ if .not. f$privilege("SYSPRV,SYSNAM,CMEXEC")
+$ then
+$     say "VMSNOTIFY$CONFIGURE: needs SYSPRV, SYSNAM and CMEXEC: run it as SYSTEM"
+$     exit 36
+$ endif
+$!
+$! ---- the configuration ----
+$ conf = "VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF"
+$ if f$search(conf) .eqs. ""
+$ then
+$     copy/nolog VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF_EXAMPLE 'conf'
+$     say "Created ''conf' from VMSNOTIFY.CONF_EXAMPLE: set the endpoints"
+$     say "  in it, and put their tokens in files in VMSNOTIFY$ROOT:[CONF],"
+$     say "  before starting the agent."
+$ endif
+$ privs = "NETMBX,TMPMBX,READALL"
+$!
+$ vmsnotify_account == ""
+$ vmsnotify_autostart == ""
+$ if f$search("SYS$MANAGER:VMSNOTIFY$CONFIG.COM") .nes. "" then @SYS$MANAGER:VMSNOTIFY$CONFIG.COM
+$ accdef = "VMSNOTIFY"
+$ if vmsnotify_account .nes. "" then accdef = vmsnotify_account
+$ autodef = "YES"
+$ if vmsnotify_autostart .nes. "" then autodef = vmsnotify_autostart
+$ account = f$edit(p1, "UPCASE,TRIM")
+$ if account .eqs. "" .and. interactive then inquire account "The agent's account [''accdef']"
+$ account = f$edit(account, "UPCASE,TRIM")
+$ if account .eqs. "" then account = accdef
+$ maxsys = f$getsyi("MAXSYSGROUP")
+$ maxsys_o = f$fao("!OL", maxsys)        ! octal, as UICs are written
+$ uicnum = f$identifier(account, "NAME_TO_NUMBER")
+$!
+$! AUTHORIZE's input, which may hold the new password: in [CONF], which
+$! only SYSTEM and the account can read, protected, and erased after.
+$ work = "VMSNOTIFY$ROOT:[CONF]VMSNOTIFY$CONFIGURE.TMP"
+$! Made with no group or world access from the start, not protected
+$! after: the default protection is put back once it is erased.
+$ old_prot = f$environment("PROTECTION")
+$ set protection=(s:rwd,o:rwd,g,w)/default
+$ uaf = f$parse("SYS$SYSTEM:SYSUAF.DAT")
+$ quotas = "/astlm=100 /bytlm=200000 /enqlm=500 /fillm=100 /biolm=100" + -
+           " /diolm=100 /pgflquota=300000 /tqelm=20 /wsdefault=4096" + -
+           " /wsquota=16384 /wsextent=32768"
+$ logins = "/nolocal /nodialup /noremote /nonetwork /nobatch"
+$ if uicnum .eq. 0 then goto new_account
+$!
+$! ---- an existing account: change it only if we made it ----
+$ if uicnum / 65536 .le. maxsys
+$ then
+$     say "VMSNOTIFY$CONFIGURE: ''account' has a system UIC; the agent needs an account of its own"
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$ define/user sys$output 'work'
+$ define/user sysuaf 'uaf'
+$ mcr authorize show 'account'
+$ owner = ""
+$ open/read f 'work'
+$ read_owner:
+$   read/end_of_file=owner_done f line
+$   at = f$locate("Owner:", line)
+$   if at .lt. f$length(line) then -
+        owner = f$edit(f$extract(at + 6, 999, line), "TRIM,COMPRESS")
+$   goto read_owner
+$ owner_done:
+$ close f
+$ delete/nolog 'work';*
+$ if f$edit(owner, "UPCASE") .nes. "VMSNOTIFY AGENT"
+$ then
+$     say "VMSNOTIFY$CONFIGURE: an account ''account' exists, but this procedure did not"
+$     say "  create it (its owner field is """, owner, """). Choose another name, so that"
+$     say "  a real user's account is not changed."
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$ say "Account ''account' exists (", f$fao("!%U", uicnum), "); setting its privileges, quotas and logins"
+$ open/write f 'work'
+$ write f "modify ''account' /privileges=(''privs') /defprivileges=(''privs') -"
+$ write f "  /flags=(nodisuser,disctly,lockpwd,norestricted) /lgicmd=""NL:"" -"
+$ write f "  ''logins' -"
+$ write f "  ''quotas'"
+$ write f "exit"
+$ close f
+$ goto run_authorize
+$!
+$! ---- a new account ----
+$ new_account:
+$ uic = f$edit(p2, "UPCASE,TRIM")
+$ if uic .eqs. "" .and. interactive then -
+      inquire uic "UIC for ''account', a group of its own above ''maxsys_o' (e.g. [360,1])"
+$ uic = f$edit(uic, "UPCASE,TRIM")
+$ if uic .eqs. "" .or. f$extract(0, 1, uic) .nes. "[" .or. -
+     f$locate(",", uic) .eq. f$length(uic)
+$ then
+$     say "VMSNOTIFY$CONFIGURE: ''account' is a new account: give its UIC, e.g. [360,1]"
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$ grp = f$integer("%O" + (f$element(0, ",", uic) - "["))
+$ if grp .le. maxsys
+$ then
+$     say "VMSNOTIFY$CONFIGURE: group ", f$fao("!OL", grp), " is a system group (MAXSYSGROUP is ", -
+          maxsys_o, "): choose a group above it"
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$! A group of its own: accounts that share a group share its group
+$! access to files. [376,*], the obvious-looking choice, is where
+$! DECnet puts its server accounts (x86).
+$ grp_o = f$fao("!OL", grp)
+$ define/user sys$output 'work'
+$ define/user sys$error nl:      ! NOSUCHUSER, when the group is free
+$ define/user sysuaf 'uaf'
+$ mcr authorize show [''grp_o',*]/brief
+$ users = ""
+$ open/read f 'work'
+$ read_group:
+$   read/end_of_file=group_done f line
+$   if f$locate("[''grp_o',", line) .lt. f$length(line) then -
+        users = users + " " + f$element(0, " ", f$edit(f$extract(21, 16, line), "TRIM"))
+$   goto read_group
+$ group_done:
+$ close f
+$ delete/nolog 'work';*
+$ if users .nes. ""
+$ then
+$     say "VMSNOTIFY$CONFIGURE: group ''grp_o' already has accounts:''users'"
+$     say "  Choose a group no other account uses."
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$! A password nobody needs: 32 random letters and digits from OpenSSL.
+$ launch := $VMSNOTIFY$ROOT:[BIN]VMSNOTIFY_LAUNCH.EXE
+$ define/user sys$output 'work'
+$ launch --password
+$ open/read f 'work'
+$ read/end_of_file=pw_read f password
+$ pw_read:
+$ close f
+$ delete/erase/nolog 'work';*
+$ if f$length(password) .ne. 32
+$ then
+$     say "VMSNOTIFY$CONFIGURE: could not make a password (VMSNOTIFY_LAUNCH.EXE --password)"
+$     set protection=('old_prot')/default
+$     exit 44
+$ endif
+$ logdev = f$parse("VMSNOTIFY$ROOT:[LOG]",,,"DEVICE","NO_CONCEAL")
+$ logdir = f$parse("VMSNOTIFY$ROOT:[LOG]",,,"DIRECTORY","NO_CONCEAL") - "][" - "><"
+$ say "Creating account ''account' ''uic'"
+$ open/write f 'work'
+$ write f "add ''account' /uic=''uic' /password=''password' /owner=""vmsnotify agent"" -"
+$ write f "  /privileges=(''privs') /defprivileges=(''privs') -"
+$ write f "  /flags=(nodisuser,disctly,lockpwd) /lgicmd=""NL:"" /pwdlifetime=none -"
+$ write f "  ''logins' -"
+$ write f "  ''quotas' -"
+$ write f "  /device=''logdev' /directory=''logdir'"
+$ write f "exit"
+$ close f
+$ password = ""
+$!
+$ run_authorize:
+$ set file/protection=(s:rwd,o,g,w) 'work'
+$ define/user sysuaf 'uaf'
+$ define/user sys$input 'work'
+$ mcr authorize
+$ delete/erase/nolog 'work';*
+$ set protection=('old_prot')/default
+$ uicnum = f$identifier(account, "NAME_TO_NUMBER")
+$ if uicnum .eq. 0
+$ then
+$     say "VMSNOTIFY$CONFIGURE: AUTHORIZE did not create ''account' (see above)"
+$     exit 44
+$ endif
+$!
+$! ---- the tree ----
+$! The root's own directory file, e.g. SYS$COMMON:[000000]VMSNOTIFY.DIR:
+$! split "[A.B.C]" at its last dot into "[A.B]" and "C".
+$ rootdev = f$parse("VMSNOTIFY$ROOT:[000000]",,,"DEVICE","NO_CONCEAL")
+$ rootdir = f$parse("VMSNOTIFY$ROOT:[000000]",,,"DIRECTORY","NO_CONCEAL") - -
+            "][" - "><" - ".000000"
+$ inner = rootdir - "[" - "]"
+$ n = 0
+$ count_dots:
+$   if f$element(n + 1, ".", inner) .eqs. "." then goto counted
+$   n = n + 1
+$   goto count_dots
+$ counted:
+$ last = f$element(n, ".", inner)
+$ parent = rootdev + "[000000]"
+$ if n .gt. 0 then parent = rootdev + "[" + -
+      f$extract(0, f$length(inner) - f$length(last) - 1, inner) + "]"
+$ set file/protection=(s:rwe,o:rwe,g:re,w:re) 'parent''last'.DIR
+$ set file/protection=(s:rwe,o:rwe,g:re,w:re) VMSNOTIFY$ROOT:[000000]BIN.DIR,COM.DIR,DOC.DIR
+$ set file/protection=(s:rwed,o:rwed,g:re,w:re) VMSNOTIFY$ROOT:[BIN]*.*;*,[COM]*.*;*,[DOC]*.*;*
+$ set file/owner='account'/protection=(s:rwe,o:rwe,g,w) -
+      VMSNOTIFY$ROOT:[000000]CONF.DIR,DATA.DIR,LOG.DIR
+$ if f$search("VMSNOTIFY$ROOT:[CONF]*.*;*") .nes. "" then -
+      set file/owner='account'/protection=(s:rwed,o:rwed,g,w) VMSNOTIFY$ROOT:[CONF]*.*;*
+$ if f$search("VMSNOTIFY$ROOT:[DATA]*.*;*") .nes. "" then -
+      set file/owner='account'/protection=(s:rwed,o:rwed,g,w) VMSNOTIFY$ROOT:[DATA]*.*;*
+$ if f$search("VMSNOTIFY$ROOT:[LOG]*.*;*") .nes. "" then -
+      set file/owner='account'/protection=(s:rwed,o:rwed,g,w) VMSNOTIFY$ROOT:[LOG]*.*;*
+$!
+$! ---- site settings ----
+$ autostart = f$edit(p3, "UPCASE,TRIM")
+$ if autostart .eqs. "" .and. interactive then -
+      inquire autostart "Start the agent at boot (YES/NO) [''autodef']"
+$ autostart = f$edit(autostart, "UPCASE,TRIM")
+$ if autostart .eqs. "" then autostart = autodef
+$ if autostart .nes. "YES" then autostart = "NO"
+$ open/write f SYS$MANAGER:VMSNOTIFY$CONFIG.COM
+$ write f "$! VMSNOTIFY$CONFIG.COM -- site settings for the vmsnotify agent, written by"
+$ write f "$! VMSNOTIFY$ROOT:[COM]VMSNOTIFY$CONFIGURE.COM (run it again to change them)"
+$ write f "$ vmsnotify_account == ""''account'"""
+$ write f "$ vmsnotify_autostart == ""''autostart'"""
+$ close f
+$ set file/protection=(s:rwed,o:rwed,g:re,w) SYS$MANAGER:VMSNOTIFY$CONFIG.COM
+$ define/system/executive_mode/nolog VMSNOTIFY$USER 'account'
+$!
+$ say ""
+$ say "The vmsnotify agent will run as ''account' ", f$fao("!%U", uicnum), -
+      ", authorized ''privs' (start at boot: ''autostart')."
+$ say "Next:"
+$ say "  1. Set the endpoints in VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF, and put each"
+$ say "     token in its own file in VMSNOTIFY$ROOT:[CONF] (token_file = ...), owned by"
+$ say "     the account with protection (S:RWED,O:RWED,G,W): SET FILE/OWNER=''account'"
+$ say "     and SET FILE/PROTECTION=(S:RWED,O:RWED,G,W) on it."
+$ say "  2. $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY_START"
+$ say "  3. Add $ @SYS$STARTUP:VMSNOTIFY$STARTUP.COM to SYS$MANAGER:SYSTARTUP_VMS.COM (after"
+$ say "     TCP/IP) and $ @SYS$STARTUP:VMSNOTIFY$SHUTDOWN.COM to SYS$MANAGER:SYSHUTDWN.COM"
+$ exit 1

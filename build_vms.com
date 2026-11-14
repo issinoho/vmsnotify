@@ -2,7 +2,8 @@ $! build_vms.com -- build the vmsnotify agent on OpenVMS (x86, IA64, Alpha)
 $!
 $! Usage, from any directory:
 $!
-$!     @[.vmsnotify]build_vms            build VMSNOTIFY.EXE and VMSNOTIFY_TLS.EXE
+$!     @[.vmsnotify]build_vms            build VMSNOTIFY.EXE, VMSNOTIFY_TLS.EXE and
+$!                                       VMSNOTIFY_LAUNCH.EXE (the kit's launcher)
 $!     @[.vmsnotify]build_vms DRYRUN     build, then run the agent with
 $!                                       --dry-run --cycles 2 against the
 $!                                       real operator log and audit journal
@@ -229,6 +230,32 @@ $ else
 $     built = built + " vmsnotify_tls.exe"
 $ endif
 $!
+$!---------------------------------------------------------------------
+$! VMSNOTIFY_LAUNCH.EXE: the kit starts the agent as its account with it
+$!---------------------------------------------------------------------
+$!
+$! Persona services and $CREPRC, and OpenSSL's generator for the
+$! account's password: so the pointer size of the ..._SHR32 images,
+$! like tls.c, and the same options file (copied from vmsotel's).
+$ say "compiling and linking vmsnotify_launch.exe"
+$ failed_before = failed
+$ cobj = "launch"
+$ csrc = "[.src.launch]launch.c"
+$ cflags = "/POINTER_SIZE=32"
+$ gosub compile
+$ cflags = ""
+$ if failed .nes. failed_before then goto summary
+$ link /EXECUTABLE=[.build]vmsnotify_launch.exe [.build]launch.obj, -
+      [.build]vmsnotify_ssl.opt/OPTIONS
+$ if $severity .ne. 1
+$ then
+$     failed = failed + " vmsnotify_launch.exe"
+$     if f$search("[.build]vmsnotify_launch.exe") .nes. "" then -
+          delete/nolog [.build]vmsnotify_launch.exe;*
+$ else
+$     built = built + " vmsnotify_launch.exe"
+$ endif
+$!
 $ summary:
 $ say ""
 $ say "built:''built'"
@@ -291,7 +318,7 @@ $ if f$search("[.build]vmsnotify*.exe") .nes. "" then -
       delete/nolog [.build]vmsnotify*.exe;*
 $ if f$search("[.build]vmsnotify_ssl.opt") .nes. "" then -
       delete/nolog [.build]vmsnotify_ssl.opt;*
-$ agent_objs = "vn_types,logparse,rules,throttle,json,format,endpoint,config,queue,vms_logs,vms_sys,platform_posix,http,agent,http_tls,agent_tls,tls"
+$ agent_objs = "launch,vn_types,logparse,rules,throttle,json,format,endpoint,config,queue,vms_logs,vms_sys,platform_posix,http,agent,http_tls,agent_tls,tls"
 $ i = 0
 $ clean_loop:
 $   o = f$element(i, ",", agent_objs)

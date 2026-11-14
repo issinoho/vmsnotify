@@ -285,7 +285,7 @@ int sys$getjpiw(unsigned int efn, unsigned int *pidadr, void *prcnam,
         case JPI$_USERNAME:
             /* This process, under an assumed persona, is its account. */
             put_text(e, pidadr == NULL && stub_persona != 0
-                        ? "VMSOTEL" : procs[k].user);
+                        ? "VMSNOTIFY" : procs[k].user);
             break;
         case JPI$_CPUTIM:   put_num(e, procs[k].cpu); break;
         case JPI$_PPGCNT:   put_num(e, procs[k].pages); break;
@@ -663,7 +663,7 @@ int sys$persona_create(unsigned int *persona, void *usrnam,
 
     (void) flags, (void) usrpro, (void) itmlst;
     stub_dsc(u, sizeof u, usrnam);
-    if (strcmp(u, "VMSOTEL") != 0)
+    if (strcmp(u, "VMSNOTIFY") != 0)
         return SS$_NOSUCHUSER;
     *persona = 7;
     return SS$_NORMAL;

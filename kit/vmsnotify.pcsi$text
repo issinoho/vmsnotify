@@ -1,0 +1,26 @@
+=product @PRODUCER@ @BASE@ VMSNOTIFY @PCSIVERSION@ full
+1 'PRODUCER
+=prompt @PRODUCER@
+1 'PRODUCT
+=prompt vmsnotify @VERSION@ for OpenVMS: operator log and audit journal to Gotify, Apprise, ntfy or a webhook
+1 'NOTICE
+=prompt vmsnotify is distributed under the MIT licence.
+1 RELEASE_NOTES
+=prompt Documentation is in [VMSNOTIFY.DOC]README.VMS under the installation directory.
+1 POST_INSTALL
+=prompt Post-installation tasks for vmsnotify
+    Once, as SYSTEM: create the agent's account (default VMSNOTIFY, with
+    a UIC group of its own above MAXSYSGROUP), set the protections, and
+    create VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF from its example:
+    $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY$CONFIGURE
+    Set the endpoints in VMSNOTIFY$ROOT:[CONF]VMSNOTIFY.CONF and put
+    their tokens in files in VMSNOTIFY$ROOT:[CONF] (token_file =), then:
+    $ @VMSNOTIFY$ROOT:[COM]VMSNOTIFY_START
+    At boot, add to SYS$MANAGER:SYSTARTUP_VMS.COM (after TCP/IP):
+    $ @SYS$STARTUP:VMSNOTIFY$STARTUP.COM
+    At shutdown, add to SYS$MANAGER:SYSHUTDWN.COM:
+    $ @SYS$STARTUP:VMSNOTIFY$SHUTDOWN.COM
+
+PRODUCT REMOVE VMSNOTIFY stops the agent and deassigns VMSNOTIFY$ROOT and
+VMSNOTIFY$USER; the configuration, the tokens, the read position, the
+logs and the account are kept.

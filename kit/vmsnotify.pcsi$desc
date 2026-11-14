@@ -1,0 +1,47 @@
+--
+-- PCSI product description for the vmsnotify agent (issinoho/vmsnotify).
+-- Adapted from vmsotel's kit/vmsotel.pcsi$desc (issinoho/vmsotel, MIT,
+-- same author). MAKE_KIT.COM writes it out with @PRODUCER@, @BASE@ and
+-- @PCSIVERSION@ filled in, and gathers every file it names
+-- (tools/check_kit.py checks that it does).
+--
+product @PRODUCER@ @BASE@ VMSNOTIFY @PCSIVERSION@ full ;
+
+    -- VMSNOTIFY_TLS.EXE and VMSNOTIFY_LAUNCH.EXE link VSI's OpenSSL 3
+    -- shared images (SSL3$LIBSSL_SHR32, SSL3$LIBCRYPTO_SHR32).
+    software VSI @BASE@ SSL3 ;
+
+    information RELEASE_NOTES phase after with helptext ;
+
+    directory [VMSNOTIFY] ;
+    directory [VMSNOTIFY.BIN] ;
+    directory [VMSNOTIFY.COM] ;
+    directory [VMSNOTIFY.CONF] ;
+    directory [VMSNOTIFY.DATA] ;
+    directory [VMSNOTIFY.DOC] ;
+    directory [VMSNOTIFY.LOG] ;
+
+    file [VMSNOTIFY.BIN]VMSNOTIFY.EXE ;
+    file [VMSNOTIFY.BIN]VMSNOTIFY_TLS.EXE ;
+    file [VMSNOTIFY.BIN]VMSNOTIFY_LAUNCH.EXE ;
+    file [VMSNOTIFY.COM]VMSNOTIFY_START.COM ;
+    file [VMSNOTIFY.COM]VMSNOTIFY_RUN.COM ;
+    file [VMSNOTIFY.COM]VMSNOTIFY_STOP.COM ;
+    file [VMSNOTIFY.COM]VMSNOTIFY$CONFIGURE.COM ;
+    file [VMSNOTIFY.CONF]VMSNOTIFY.CONF_EXAMPLE ;
+    file [VMSNOTIFY.DOC]README.VMS ;
+    file [VMSNOTIFY.DOC]OPERATIONS.MD ;
+    file [VMSNOTIFY.DOC]LICENSE. ;
+    file [SYS$STARTUP]VMSNOTIFY$STARTUP.COM ;
+    file [SYS$STARTUP]VMSNOTIFY$SHUTDOWN.COM ;
+
+    -- Define VMSNOTIFY$ROOT now. VMSNOTIFY.CONF, the tokens, the read
+    -- position and the logs are never part of the kit, so an upgrade or
+    -- a removal leaves them alone.
+    execute postinstall "@PCSI$DESTINATION:[SYS$STARTUP]VMSNOTIFY$STARTUP.COM INSTALL" interactive ;
+    -- On removal: stop the agent, deassign VMSNOTIFY$ROOT and VMSNOTIFY$USER.
+    execute install "CONTINUE" remove "@PCSI$DESTINATION:[SYS$STARTUP]VMSNOTIFY$STARTUP.COM REMOVE" ;
+
+    information POST_INSTALL phase after with helptext ;
+
+end product ;
