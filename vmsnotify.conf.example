@@ -93,10 +93,12 @@ token_file = VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
 #   privileged     audit PRVAUD, SYSTIME, SYSGEN, INSTALL       high
 #   opcom-error    OPCOM messages with an -E- or -F- condition  high
 #   opcom-warning  OPCOM messages with a -W- condition          normal
-#   opcom-request  OPCOM REQUESTs to the operators              normal
+#   opcom-request  OPCOM REQUEST/REPLY (numbered requests)      normal
+#   opcom-message  OPCOM messages from a user other than SYSTEM normal
+#                  (a plain REQUEST is written as one of these)
 #
-# Anything else -- logins, logouts, object access, the operator log's
-# time stamps -- is not sent. Repeats of a rule's event for the same user
+# Anything else -- logins, logouts, object access, SYSTEM's routine
+# operator messages, the operator log's time stamps -- is not sent. Repeats of a rule's event for the same user
 # and remote node within 300 s are counted and sent as one summary.
 #
 # rules.defaults = yes
@@ -111,6 +113,8 @@ token_file = VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN
 #   severity   warning, error or fatal: at least this
 #   request    yes: only operator REQUESTs
 #   user       the user (VMS wildcards * and %, case-blind)
+#   not_user   users, comma-separated wildcards, that keep the rule from
+#              matching, e.g. SYSTEM, TCPIP$*
 #   terminal   the terminal
 #   remote     the remote node or address, e.g. *192.168.0.131
 #   text       the whole message text, e.g. *SHADOW*

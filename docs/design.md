@@ -62,7 +62,8 @@ and not yet sent when the agent stops is logged as lost, as vmsotel does.
 | privileged | audit PRVAUD, SYSTIME, SYSGEN, INSTALL | high |
 | opcom-error | OPCOM with an `-E-` or `-F-` condition | high |
 | opcom-warning | OPCOM with a `-W-` condition | normal |
-| opcom-request | OPCOM REQUEST | normal |
+| opcom-request | OPCOM REQUEST/REPLY (a numbered request) | normal |
+| opcom-message | OPCOM message from any user but SYSTEM (a plain REQUEST is one: findings O2) | normal |
 
 Everything else is quiet. User rules come first; the first match decides; a rule can
 `ignore`. Audit type names are NSADEF's (`vn_nsa_type_name`). An OPCOM message's severity

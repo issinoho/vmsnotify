@@ -205,6 +205,12 @@ user, sent from a batch job, 2026-11-13 23:58 UTC.
 | O3 | The default rules and a plain REQUEST | **ignored** | ignored | ignored | The agent, resumed from a position saved before the REQUEST, read it: `resuming in SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;251 at the saved position (2 records written while stopped)`, `done: 180 cycles, 2 records, 2 ignored, 0 events` (x86; IA64 and the Alpha `1 records, 1 ignored`). `opcom-request` matches only numbered requests (`openvms.opcom.request`), and a plain message with no condition code matches nothing else |
 | O4 | An operator message through a rule to the real servers | yes | - | - | x86, resumed again with `[rule opcom-marker] source = opcom, text = *vmsnotify OPCOM test*`: `event opcom-marker [normal] to gotify, apprise, ntfy: X86VMS: BATCH_473, vmsnotify OPCOM test X86VMS M235823`, `9 sent, 0 failed attempts`; ntfy got priority 3, title `X86VMS: BATCH_473, vmsnotify OPCOM test X86VMS M235823`, body `Message from user IAIN on X86VMS`, the text, `Time: 2026-11-13 23:58:23 UTC`, `Rule: opcom-marker` |
 
+| O5 | A plain REQUEST under the default rules, with `opcom-message` | yes | - | - | After the change below, rebuilt on x86 and resumed from the same saved position with no rule of its own: `event opcom-message [normal] to gotify, apprise, ntfy: X86VMS: BATCH_473, vmsnotify OPCOM test X86VMS M235823`, `2 records, 1 ignored, 1 events … 9 sent, 0 failed attempts`; ntfy: priority 3, the same title |
+
+Decided with the user after O3: a new default, `opcom-message`, sends OPCOM messages from any
+user but SYSTEM at normal priority (a person's message to the operators; SYSTEM's are
+routine), with a new rule setting, `not_user`, to say so.
+
 The live delay from OPERATOR.LOG to a notification was not measured: the first run's agents
 did not start (a mistake in the test procedure), so each was resumed from an earlier saved
 position afterwards. A numbered request (`REQUEST/REPLY`) was not tried: it waits for a

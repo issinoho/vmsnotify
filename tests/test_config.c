@@ -69,8 +69,8 @@ static void test_good(void)
     CHECK(e->token[0] == '\0');            /* the agent reads the file */
     e = vn_config_endpoint(&c, "pager");
     CHECK(e != NULL && strcmp(e->pass, "p w") == 0 && e->min_priority == VN_PRIO_HIGH);
-    /* Two user rules, then the eight defaults with rules.defaults.to. */
-    CHECK(c.rules.n == 10);
+    /* Two user rules, then the nine defaults with rules.defaults.to. */
+    CHECK(c.rules.n == 11);
     CHECK(strcmp(c.rules.rule[2].name, "breakin") == 0);
     CHECK(strcmp(c.rules.rule[2].to, "home") == 0);
     CHECK(c.rules.rule[1].throttle_s == 0 && c.rules.rule[2].throttle_s == 300);
@@ -128,7 +128,7 @@ static void test_example(const char *path)
     CHECK(vn_config_parse(&c, text, n, err, sizeof err));
     if (err[0])
         printf("example: %s\n", err);
-    CHECK(c.nendpoints == 1 && c.rules.n == 8);
+    CHECK(c.nendpoints == 1 && c.rules.n == 9);
     CHECK(strcmp(c.token_file[0], "VMSNOTIFY$ROOT:[CONF]GOTIFY.TOKEN") == 0);
 }
 

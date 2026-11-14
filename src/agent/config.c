@@ -223,6 +223,9 @@ static int rule_key(vn_rule *r, const char *k, const char *v, char *err, size_t 
     } else if (strcmp(k, "remote") == 0) {
         if (!set(r->remote, sizeof r->remote, v))
             FAIL("remote is too long");
+    } else if (strcmp(k, "not_user") == 0) {
+        if (!set(r->not_user, sizeof r->not_user, v))
+            FAIL("not_user is too long");
     } else if (strcmp(k, "text") == 0) {
         if (!set(r->text, sizeof r->text, v))
             FAIL("text is too long");

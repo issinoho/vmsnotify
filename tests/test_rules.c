@@ -76,8 +76,21 @@ static void test_defaults(void)
     CHECK(strcmp(matched(&rs, &r), "opcom-request") == 0);
     CHECK(recs_opcom(&r, "Logfile time stamp"));
     CHECK(strcmp(matched(&rs, &r), "(none)") == 0);
+    /* A person's message, as a plain REQUEST is written (findings O2),
+       notifies; SYSTEM's routine ones do not. */
     CHECK(recs_opcom(&r, "Message from user IAIN on X86VMS\nhello"));
+    CHECK(strcmp(matched(&rs, &r), "opcom-message") == 0);
+    CHECK(vn_rules_match(&rs, &r)->priority == VN_PRIO_NORMAL);
+    CHECK(recs_opcom(&r, "Message from user IAIN on X86VMS\n"
+                         "BATCH_473, vmsnotify OPCOM test X86VMS M235823"));
+    CHECK(strcmp(matched(&rs, &r), "opcom-message") == 0);
+    CHECK(recs_opcom(&r, "Message from user SYSTEM on X86VMS\nnightly backup done"));
     CHECK(strcmp(matched(&rs, &r), "(none)") == 0);
+    CHECK(recs_opcom(&r, "Message from user system on X86VMS\nlower case too"));
+    CHECK(strcmp(matched(&rs, &r), "(none)") == 0);
+    /* SYSTEM's error still notifies, through opcom-error. */
+    CHECK(recs_opcom(&r, "Message from user SYSTEM on X86VMS\n%BACKUP-E-OPENIN, error"));
+    CHECK(strcmp(matched(&rs, &r), "opcom-error") == 0);
 }
 
 static void test_user_rules(void)
@@ -116,6 +129,22 @@ static void test_user_rules(void)
     CHECK(vn_rule_sends_to(vn_rules_match(&rs, &r), "HOME"));
     CHECK(!vn_rule_sends_to(vn_rules_match(&rs, &r), "apprise"));
     CHECK(vn_rule_sends_to(&rs.rule[rs.n - 1], "anything"));
+
+    /* not_user: a comma list of patterns that keep a rule from matching. */
+    {
+        vn_ruleset ns;
+        vn_rule nu;
+
+        memset(&ns, 0, sizeof ns);
+        vn_rule_init(&nu, "people");
+        nu.source = VN_LOG_OPCOM;
+        strcpy(nu.not_user, "SYSTEM, TCPIP$*");
+        CHECK(vn_rules_add(&ns, &nu));
+        CHECK(recs_opcom(&r, "Message from user TCPIP$FTP on X86VMS\nx"));
+        CHECK(vn_rules_match(&ns, &r) == NULL);
+        CHECK(recs_opcom(&r, "Message from user IAIN on X86VMS\nx"));
+        CHECK(vn_rules_match(&ns, &r) != NULL);
+    }
 
     CHECK(vn_prio_parse("High") == VN_PRIO_HIGH);
     CHECK(vn_prio_parse("loud") == 0);

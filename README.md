@@ -28,7 +28,7 @@ and nothing listens on the VMS system.
 | Login failure (LOGFAIL) | high |
 | UAF or rights database change; auditing changed; privilege use, system time, SYSGEN, INSTALL | high |
 | OPCOM message with an `-E-` or `-F-` condition | high |
-| OPCOM message with a `-W-` condition; operator REQUEST | normal |
+| OPCOM message with a `-W-` condition; an operator REQUEST; any OPCOM message from a user other than SYSTEM | normal |
 
 Logins, logouts and routine OPCOM traffic stay quiet. Your own rules come first: silence a
 monitoring host's login failures, raise anything mentioning shadow sets, send some events

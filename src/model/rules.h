@@ -42,6 +42,8 @@ typedef struct {
     char terminal[VN_RULE_PAT];
     char remote[VN_RULE_PAT];   /* remote node name or address */
     char text[VN_RULE_PAT];     /* the whole message text */
+    char not_user[VN_RULE_LIST]; /* user patterns, comma-separated, that
+                                   keep the rule from matching */
 
     /* What it does. */
     int action;                 /* VN_ACT_* */
