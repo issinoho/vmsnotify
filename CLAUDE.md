@@ -19,8 +19,8 @@ live login failures and stopped cleanly (D1-D4). The PCSI kit (`kit/`, the perso
 launcher `src/launch/launch.c`, the agent as its own account VMSNOTIFY with NETMBX, TMPMBX
 and READALL) is installed, configured, started by VMSNOTIFY$STARTUP, stopped by $SHUTDOWN,
 removed and reinstalled on x86, IA64 and the Alpha, and upgraded on x86 (K1-K3). All three
-have V0.1-0 installed, stopped, start at boot off, account VMSNOTIFY [351,1]. Not yet: a
-release, a real reboot.
+have V0.1-0 installed, stopped, start at boot off, account VMSNOTIFY [351,1]. Released as
+v0.1.0 (the three kits, rebuilt from eccaee3; on the family site). Not yet: a real reboot.
 Induced login failures count towards VMS's break-in evasion: six from one source in a few
 minutes made an INTRUDER record on x86. Keep to three, and say so first. The read position across restarts (D8) is implemented in the
 fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says
