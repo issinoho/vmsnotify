@@ -192,3 +192,20 @@ per endpoint): none from the refused cases.
 
 Not tested: a certificate with the right root but the wrong address; TLS 1.2; an expired
 certificate; whether the VMS machines' system CA stores trust a public CA.
+
+## The operator log (OPCOM)
+
+One plain `REQUEST "vmsnotify OPCOM test <NODE> M<hhmmss>"` per machine, approved by the
+user, sent from a batch job, 2026-11-13 23:58 UTC.
+
+| # | Question | x86 | IA64 | Alpha | Evidence / notes |
+| --- | --- | --- | --- | --- | --- |
+| O1 | The REQUEST reaches OPERATOR.LOG, and how soon | at once | at once | **at once** | `SHOW TIME` 23:58:23, 23:58:20, 23:58:26; headers `OPCOM  13-NOV-2026 23:58:23.52`, `… 23:58:20.99`, `… 23:58:26.08`. On the Alpha, not the 10–11 minutes vmsotel A19 saw; why it differs was not looked into |
+| O2 | How a plain REQUEST is written | as a **message**, not a request | the same | the same | `Message from user IAIN on X86VMS`, `BATCH_473, vmsnotify OPCOM test X86VMS M235823`. Only `REQUEST/REPLY` gives `Request N, from user …` |
+| O3 | The default rules and a plain REQUEST | **ignored** | ignored | ignored | The agent, resumed from a position saved before the REQUEST, read it: `resuming in SYS$SYSROOT:[SYSMGR]OPERATOR.LOG;251 at the saved position (2 records written while stopped)`, `done: 180 cycles, 2 records, 2 ignored, 0 events` (x86; IA64 and the Alpha `1 records, 1 ignored`). `opcom-request` matches only numbered requests (`openvms.opcom.request`), and a plain message with no condition code matches nothing else |
+| O4 | An operator message through a rule to the real servers | yes | - | - | x86, resumed again with `[rule opcom-marker] source = opcom, text = *vmsnotify OPCOM test*`: `event opcom-marker [normal] to gotify, apprise, ntfy: X86VMS: BATCH_473, vmsnotify OPCOM test X86VMS M235823`, `9 sent, 0 failed attempts`; ntfy got priority 3, title `X86VMS: BATCH_473, vmsnotify OPCOM test X86VMS M235823`, body `Message from user IAIN on X86VMS`, the text, `Time: 2026-11-13 23:58:23 UTC`, `Rule: opcom-marker` |
+
+The live delay from OPERATOR.LOG to a notification was not measured: the first run's agents
+did not start (a mistake in the test procedure), so each was resumed from an earlier saved
+position afterwards. A numbered request (`REQUEST/REPLY`) was not tried: it waits for a
+REPLY.
