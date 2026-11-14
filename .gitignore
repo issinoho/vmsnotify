@@ -2,4 +2,3 @@ build/
 tools/nodes.conf
 __pycache__/
 *.pyc
-tools/test-endpoints/.env

@@ -97,7 +97,7 @@ Not yet on IA64: as x86's list, and a break-in record (two failures make only a 
 ## The real servers
 
 Gotify 3.1.1, the Apprise API (caronc/apprise 2.1.0) and ntfy v2.37.2, from
-`tools/test-endpoints/compose.yaml`, on docker-nuc, 2026-11-13. The Apprise key `vms`
+`tools/test-endpoints/compose.yaml` (removed after v0.1.0; in its history), on docker-nuc, 2026-11-13. The Apprise key `vms`
 holds one URL, the Gotify application's. Plain HTTP on the LAN.
 
 | # | Question | Linux | x86 | IA64 | Evidence / notes |
@@ -281,3 +281,19 @@ Files the agent makes in [DATA] and [LOG] get the account's default protection,
 be used.
 
 Not yet run: a real reboot; an upgrade on IA64 and the Alpha.
+
+## In use: the user's Gotify
+
+2026-11-14, after v0.1.0. The test servers were retired; each machine's
+`VMSNOTIFY$ROOT:[CONF]` now holds a configuration with one endpoint, the user's own Gotify
+(`https://gotify.issinoho.com`, a Let's Encrypt certificate: leaf, YE2, Root YE, ISRG Root
+X2, cross-signed by ISRG Root X1), and the token file `(RWED,RWED,,)` owned by VMSNOTIFY.
+
+| # | Question | x86 | IA64 | Alpha | Evidence / notes |
+| --- | --- | --- | --- | --- | --- |
+| U1 | The system's certificate store verifies a Let's Encrypt server (no `cafile`) | **no** | **no** | yes | `--test`: x86 and IA64 `FAIL gotify (gotify): TLS certificate: unable to get local issuer certificate`; Alpha `ok gotify (gotify): HTTP 200, TLSv1.3 TLS_AES_256_GCM_SHA384`. With `cafile` = ISRG Root X1 and X2 in PEM (SHA-256 `96:BC:EC:06…08:C6` and `69:72:9B:8E…14:70`), x86 and IA64 `ok … HTTP 200, TLSv1.3`. The name resolved on all three (`90.210.112.27`); the agent sends SNI and checks the name (`SSL_set_tlsext_host_name`, `SSL_set1_host`) |
+| U2 | Started at boot | set up | set up | set up | `SYSTARTUP_VMS.COM`: x86 `st_62`, IA64 `st_53`, Alpha `st_12 = "Notifications|SYS$STARTUP:VMSNOTIFY$STARTUP.COM"`, each a new version beside the old; `SYSHUTDWN.COM`: `$ @SYS$STARTUP:VMSNOTIFY$SHUTDOWN.COM` after vmsotel's; `VMSNOTIFY$CONFIGURE VMSNOTIFY "" YES`. Not yet seen through a real reboot |
+
+Running configure while the agent ran: `%SET-E-READERR, error reading
+VMSNOTIFY$ROOT:[LOG]VMSNOTIFY_RUN.LOG … ACCONFLICT` (the run log is open); harmless, the
+rest of the tree was set.

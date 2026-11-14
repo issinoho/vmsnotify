@@ -185,8 +185,9 @@ command-line packet (vmsotel's rule).
    summary; `--test`; `--dry-run`; stop file and SIGTERM; a restart resuming without loss
    or repeats, the catch-up limits, a replaced log; an unreadable log; token files; and no
    secret in any line the agent wrote. The VMS reader's position code runs the same way
-   against `stub/`. **Not done:** a run against the real Gotify, apprise-api and ntfy
-   containers on docker-nuc (`tools/test-endpoints/`).
+   against `stub/`. Real Gotify, apprise-api and ntfy servers were reached later, from VMS
+   (findings R1, T1), in throwaway containers whose compose file (`tools/test-endpoints/`)
+   was removed after the release; it is in the history at v0.1.0.
 3. **Probes on x86, IA64, Alpha**: the read position across process restarts, REPLY/LOG
    and NEW_LOG (D8 depends on it). x86 has answered the first ("The read position");
    IA64 and Alpha have not.

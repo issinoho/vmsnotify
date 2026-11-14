@@ -65,8 +65,10 @@ take SSH key login as IAIN: `tools/vms.sh x86|ia64|alpha` (copy `tools/nodes.con
 to the git-ignored `tools/nodes.conf`). Run anything over a minute as `vms.sh NODE batch
 PROC.COM`: interactive SSH sessions lose long runs, worst on the Alpha. IAIN has every
 privilege by default on the Alpha. Ask before anything system-wide (PRODUCT INSTALL,
-AUTHORIZE, SYSTARTUP) or that reaches the operators (REQUEST). Test endpoints:
-containers on docker-nuc (192.168.0.218), which the user runs; there is no SSH to it.
+AUTHORIZE, SYSTARTUP) or that reaches the operators (REQUEST). The test servers on
+docker-nuc are gone (their compose file is in the history at v0.1.0; there is no SSH to
+docker-nuc). All three machines now run the installed agent, started at boot, sending to
+the user's own Gotify; `--test` and induced events reach a real phone, so warn first.
 
 ## Hard constraints
 
