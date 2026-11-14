@@ -15,7 +15,11 @@ real Gotify, Apprise API and ntfy from all three (R1). Verified TLS from all thr
 real servers and the stand-in, with refusals (T1-T6). A plain REQUEST arrives as an
 operator message, sent by the `opcom-message` default (O1-O5; x86 only so far). An hour
 detached on all three, with `VMSNOTIFY_START`/`_RUN`/`_STOP` in the source tree, delivered
-live login failures and stopped cleanly (D1-D4). Not yet: the kit.
+live login failures and stopped cleanly (D1-D4). The PCSI kit (`kit/`, the persona
+launcher `src/launch/launch.c`, the agent as its own account VMSNOTIFY with NETMBX, TMPMBX
+and READALL) is installed, configured, started by VMSNOTIFY$STARTUP, stopped by $SHUTDOWN,
+removed, reinstalled and upgraded on x86 (K1-K3); x86 has V0.1-0 installed, stopped, start at
+boot off, account [351,1]. Not yet: the kit on IA64 and the Alpha, a release.
 Induced login failures count towards VMS's break-in evasion: six from one source in a few
 minutes made an INTRUDER record on x86. Keep to three, and say so first. The read position across restarts (D8) is implemented in the
 fake source and in `vms_logs.c`; the latter has run only against `stub/`. x86's probe says

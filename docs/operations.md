@@ -152,7 +152,8 @@ $ product install vmsnotify /source=dev:[dir]
 PCSI replaces the images, procedures and documents. The configuration,
 the tokens, the position, the logs, the site settings and the account
 are not part of the kit and are left alone. Stop the agent first
-(`VMSNOTIFY_STOP`) and start it again afterwards.
+(`VMSNOTIFY_STOP`) and start it again afterwards; one left running carries
+on with the old image until it is restarted.
 
 ## Remove
 
@@ -162,6 +163,8 @@ $ product remove vmsnotify
 
 stops the agent and deassigns `VMSNOTIFY$ROOT` and `VMSNOTIFY$USER`.
 The configuration, tokens, position, logs, `SYS$MANAGER:VMSNOTIFY$CONFIG.COM`
-and the account stay, so that a reinstall carries on where it left off.
+and the account stay, so that a reinstall carries on where it left off,
+once `VMSNOTIFY$CONFIGURE` has been run again (or the system restarted) to
+define `VMSNOTIFY$USER`; until then `VMSNOTIFY_START` says there is no account.
 Remove the lines from `SYSTARTUP_VMS.COM` and `SYSHUTDWN.COM` yourself,
 and the account with AUTHORIZE if you want it gone.
