@@ -241,3 +241,16 @@ whether the two failures made SUSPECT entries that had since expired was not che
 
 Not tested: the kit's layout and account, a start from SYSTARTUP, a run longer than an
 hour, and D4's fix on IA64 and the Alpha.
+
+## The kit
+
+| # | Question | x86 | IA64 | Alpha | Evidence / notes |
+| --- | --- | --- | --- | --- | --- |
+| K1 | Build, install, configure, run as its own account | **yes** | - | - | 2026-11-14, as IAIN with every privilege, approved by the user. `build_vms`: `built: vmsnotify.exe vmsnotify_tls.exe vmsnotify_launch.exe`. MAKE_KIT: `ISSINOHO-X86VMS-VMSNOTIFY-V0001-0-1.PCSI`, 832 blocks, 13 files. `PRODUCT INSTALL … /OPTIONS=NOCONFIRM`: `not signed`, installed to `DISK$X86SYS:[VMS$COMMON.]`, the POST_INSTALL text in full; `VMSNOTIFY$ROOT` = `X86VMS$DKA0:[SYS0.SYSCOMMON.VMSNOTIFY.]`. `VMSNOTIFY$CONFIGURE VMSNOTIFY [351,1] NO` ([351] was free; [350] is vmsotel's): `user record successfully added`; AUTHORIZE: owner `vmsnotify agent`, `DisCtlY LockPwd`, every login class `No access`, `Pwdchange: (pre-expired)`, authorized and default `NETMBX READALL TMPMBX`; CONF, DATA and LOG `[VMSNOTIFY] (RWE,RWE,,)`, BIN, COM, DOC `[SYSTEM] (RWE,RWE,RE,RE)`. The T1 settings, the Gotify token and the CA certificate copied to [CONF], owned by VMSNOTIFY `(RWED,RWED,,)`. `VMSNOTIFY_START`: `vmsnotify_launch: process 0002C6D5 started as VMSNOTIFY`; from IAIN, `user VMSNOTIFY uic [VMSNOTIFY]`, `authpriv` and `curpriv TMPMBX,NETMBX,READALL`; VMSNOTIFY_RUN.LOG: process rights `VMSNOTIFY` only. Position `…[VMSNOTIFY.DATA]VMSNOTIFY.POS`. One wrong-password SSH login at 07:35:13: `07:35:24Z event login-failure [high] … X86VMS: Login failure: remote user IAIN from 192.168.0.131 on FTA9562:`; `VMSNOTIFY_STOP` (as IAIN): `acknowledged`, `stopped: 14 cycles, 1 records, 0 ignored, 1 events … 2 notices; 9 sent, 0 failed attempts, 0 dropped, 0 unsent`, `agent exited, status %X00000001`. ntfy: `07:33:45 started`, `07:35:25` the login failure at priority 4, `07:36:00 stopped`. Only `VMSNOTIFY.POS;2` left in [DATA]: D4's fix, in the kit |
+
+Files the agent makes in [DATA] and [LOG] get the account's default protection,
+`(RWED,RWED,RE,)`; their directories give group and world nothing, so that read access cannot
+be used.
+
+Not yet run: start and stop by VMSNOTIFY$STARTUP and $SHUTDOWN, an upgrade, PRODUCT REMOVE;
+IA64 and the Alpha.
